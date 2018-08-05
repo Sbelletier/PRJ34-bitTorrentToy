@@ -6,7 +6,7 @@ pour gerer l'encodage bencoding
 
 
 
-def getEncodedInt( string ):
+def getDecodedInteger( string ):
     """
     Renvoie l'entier dont l'encodage commence a string[0],
     et une version modifiée de string d'ou l'encodage de
@@ -27,8 +27,9 @@ def getEncodedInt( string ):
     string = string[1:] #on enleve le e final
     return integer, string
 
+#def encodeInt( string )
 
-def getEncodedStr( string ):
+def getDecodedString( string ):
     """
     Renvoie la chaine de caracteres dont l'encodage commence a string[0],
     et une version modifiée de string d'ou l'encodage de la chaine lue
@@ -54,7 +55,7 @@ def getEncodedStr( string ):
     return returnString, string
 
 
-def getEncodedList( string ):
+def getDecodedList( string ):
     """
     Renvoie la liste dont l'encodage commence a string[0],
     et une version modifiée de string d'ou l'encodage de 
@@ -70,13 +71,13 @@ def getEncodedList( string ):
         content = None
         #Switch sur les 4 elements possibles
         if( string[0] == 'l' ):
-            content, string = getEncodedList( string )
+            content, string = getDecodedList( string )
         elif( string[0] == 'd' ):
-            content, string = getEncodedDict( string )
+            content, string = getDecodedDict( string )
         elif( string[0] == 'i'):
-            content, string = getEncodedInt( string )
+            content, string = getDecodedInteger( string )
         elif( string[0] in ('0', '1', '2', '3', '4', '5', '6', '7', '8', '9') ):
-            content, string = getEncodedStr( string )
+            content, string = getDecodedString( string )
         #On append le nouveau contenu
         bencodedList.append(content)
     #Retour
@@ -84,7 +85,7 @@ def getEncodedList( string ):
     return bencodedList, string
 
 
-def getEncodedDict( string ):
+def getDecodedDict( string ):
     """
     Renvoie le dictionnaire dont l'encodage commence a string[0],
     et une version modifiée de dictionnaire d'ou l'encodage du 
@@ -97,18 +98,18 @@ def getEncodedDict( string ):
     bencodedDict = dict()
     while( string[0] != 'e' ):
         #On lit la clé
-        key, string = getEncodedStr( string )
+        key, string = getDecodedString( string )
         #On lit l'element indexé
         content = None
         #Switch sur les 4 elements possibles
         if( string[0] == 'l' ):
-            content, string = getEncodedList( string )
+            content, string = getDecodedList( string )
         elif( string[0] == 'd' ):
-            content, string = getEncodedDict( string )
+            content, string = getDecodedDict( string )
         elif( string[0] == 'i'):
-            content, string = getEncodedInt( string )
+            content, string = getDecodedInteger( string )
         elif( string[0] in ('0', '1', '2', '3', '4', '5', '6', '7', '8', '9') ):
-            content, string = getEncodedStr( string )
+            content, string = getDecodedString( string )
         #On append le nouveau contenu
         bencodedDict[key] = content
     #Retour
@@ -116,7 +117,7 @@ def getEncodedDict( string ):
     return bencodedDict, string
 
 
-def getEncodedObject( string ):
+def getDecodedObject( string ):
     """
     Renvoie l'element encodé et son type en tant que string
 
@@ -124,16 +125,16 @@ def getEncodedObject( string ):
     """
     #Switch sur les 4 elements possibles
     if( string[0] == 'l' ):
-        content, string = getEncodedList( string )
+        content, string = getDecodedList( string )
         return content, "list"
     elif( string[0] == 'd' ):
-        content, string = getEncodedDict( string )
+        content, string = getDecodedDict( string )
         return content, "dict"
     elif( string[0] == 'i'):
-        content, string = getEncodedInt( string )
+        content, string = getDecodedInteger( string )
         return content, "int"
     elif( string[0] in ('0', '1', '2', '3', '4', '5', '6', '7', '8', '9') ):
-        content, string = getEncodedStr( string )
+        content, string = getDecodedString( string )
         return content, "str"
     return None, "error"
 
@@ -152,7 +153,7 @@ if __name__ == '__main__':
     print "initial bencoding"
     print string
     print "first decoding"
-    result, typeObject = getEncodedObject( string )
+    result, typeObject = getDecodedObject( string )
     print result
     print typeObject
     
