@@ -1,0 +1,6 @@
+
+#Python ignore
+*.pyc
+
+#vsCode ignore
+.vscode/*
