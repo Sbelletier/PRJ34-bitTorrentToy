@@ -6,7 +6,7 @@ pour gerer l'encodage bencoding
 
 
 
-def getDecodedInteger( string ):
+def getDecodedInt( string ):
     """
     Renvoie l'entier dont l'encodage commence a string[0],
     et une version modifiée de string d'ou l'encodage de
@@ -27,7 +27,14 @@ def getDecodedInteger( string ):
     string = string[1:] #on enleve le e final
     return integer, string
 
-#def encodeInt( string )
+
+def getEncodedInt( integer ):
+    """
+    Renvoie la chaine encodant l'entier pris en parametre
+    """
+    return "i" + str( integer ) + "e"
+
+
 
 def getDecodedString( string ):
     """
@@ -55,6 +62,15 @@ def getDecodedString( string ):
     return returnString, string
 
 
+def getEncodedString( string ):
+    """
+    Renvoie la chaine encodant la chaine prise en paramètre
+    """
+    return str( len( string ) ) + ":" + string
+
+
+
+
 def getDecodedList( string ):
     """
     Renvoie la liste dont l'encodage commence a string[0],
@@ -75,7 +91,7 @@ def getDecodedList( string ):
         elif( string[0] == 'd' ):
             content, string = getDecodedDict( string )
         elif( string[0] == 'i'):
-            content, string = getDecodedInteger( string )
+            content, string = getDecodedInt( string )
         elif( string[0] in ('0', '1', '2', '3', '4', '5', '6', '7', '8', '9') ):
             content, string = getDecodedString( string )
         #On append le nouveau contenu
@@ -83,6 +99,18 @@ def getDecodedList( string ):
     #Retour
     string = string[1:] #On enleve le e final
     return bencodedList, string
+
+
+def getEncodedList( listInput ):
+    """
+    Renvoie la chaine encodant la liste prise en paramètre
+    """
+    string = "l"
+    for element in listInput:
+        string += getEncodedObject(element)
+    string += "e"
+    return string
+
 
 
 def getDecodedDict( string ):
@@ -107,7 +135,7 @@ def getDecodedDict( string ):
         elif( string[0] == 'd' ):
             content, string = getDecodedDict( string )
         elif( string[0] == 'i'):
-            content, string = getDecodedInteger( string )
+            content, string = getDecodedInt( string )
         elif( string[0] in ('0', '1', '2', '3', '4', '5', '6', '7', '8', '9') ):
             content, string = getDecodedString( string )
         #On append le nouveau contenu
@@ -115,6 +143,19 @@ def getDecodedDict( string ):
     #Retour
     string = string[1:] #On enleve le e final
     return bencodedDict, string
+
+
+def getEncodedDict( dico ):
+    """
+    Renvoie la chaine encodant le dictionnaire pris en paramètre
+    """
+    string = "d"
+    for key in dico.keys():
+        string += getEncodedString(key)
+        string += getEncodedObject( dico[key] )
+    string += "e"
+    return string
+
 
 
 def getDecodedObject( string ):
@@ -131,12 +172,30 @@ def getDecodedObject( string ):
         content, string = getDecodedDict( string )
         return content, "dict"
     elif( string[0] == 'i'):
-        content, string = getDecodedInteger( string )
+        content, string = getDecodedInt( string )
         return content, "int"
     elif( string[0] in ('0', '1', '2', '3', '4', '5', '6', '7', '8', '9') ):
         content, string = getDecodedString( string )
         return content, "str"
     return None, "error"
+
+
+def getEncodedObject( obj ):
+    """
+    Renvoie la version encodee de l'objet pris en entree
+    """
+    if type( obj ) == int:
+        return getEncodedInt( obj )
+    elif type( obj ) == str:
+        return getEncodedString( obj )
+    elif type( obj ) == list:
+        return getEncodedList( obj )
+    elif type( obj ) == dict:
+        return getEncodedDict( obj )
+    else:
+        return getEncodedString( str(obj) )
+
+
 
 """
 Petit Test:
@@ -152,8 +211,10 @@ if __name__ == '__main__':
     string = "ll12:constitutioni35ee10:sauvegardei9ed3:bar4:spam3:fooi42eee"
     print "initial bencoding"
     print string
-    print "first decoding"
+    print "decoding"
     result, typeObject = getDecodedObject( string )
     print result
     print typeObject
+    print "reencoding"
+    print getEncodedObject( result )
     
