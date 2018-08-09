@@ -53,11 +53,10 @@ def getDecodedString( string ):
     string = string[1:] #On retire le : de separation
     #Conversion de la longueur
     stringLength = int( lBuffer )
-    #Lecture de la chaine
-    returnString = ""
-    for i in range( stringLength ):
-        returnString += string[0]
-        string = string[1:]
+    #Lecture du contenu de la chaine
+    returnString = string[:stringLength]
+	#Extraction du contenu de la chaine du bencode original
+	string = string[stringLength:]
     #Retour
     return returnString, string
 
