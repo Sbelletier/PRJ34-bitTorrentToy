@@ -37,28 +37,28 @@ def getEncodedInt( integer ):
 
 
 def getDecodedString( string ):
-    """
-    Renvoie la chaine de caracteres dont l'encodage commence a string[0],
-    et une version modifiée de string d'ou l'encodage de la chaine lue
-    a été consommé
-
-    Hypothèse de départ :
-    string[0] in ('0', '1', '2', '3', '4', '5', '6', '7', '8', '9')
-    """
-    lBuffer = ""
+	"""
+	Renvoie la chaine de caracteres dont l'encodage commence a string[0],
+	et une version modifiée de string d'ou l'encodage de la chaine lue
+	a été consommé
+	
+	Hypothèse de départ :
+	string[0] in ('0', '1', '2', '3', '4', '5', '6', '7', '8', '9')
+	"""
+	lBuffer = ""
     #Lecture de la longueur
-    while( string[0] != ':'):
-        lBuffer += string[0]
-        string = string[1:]
-    string = string[1:] #On retire le : de separation
+	while( string[0] != ':'):
+		lBuffer += string[0]
+		string = string[1:]
+	string = string[1:] #On retire le : de separation
     #Conversion de la longueur
-    stringLength = int( lBuffer )
+	stringLength = int( lBuffer )
     #Lecture du contenu de la chaine
-    returnString = string[:stringLength]
+	returnString = string[:stringLength]
 	#Extraction du contenu de la chaine du bencode original
 	string = string[stringLength:]
-    #Retour
-    return returnString, string
+	#Retour
+	return returnString, string
 
 
 def getEncodedString( string ):
