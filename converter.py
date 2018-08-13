@@ -47,10 +47,18 @@ TORRENT_FILE_EXTENSION = ".torrent"
 	UTILITAIRES
 ====================
 """
-def extract_list_pieces_hash( pieces_string ):
+def extract_list_pieces_hash( pieces_string, hash_length):
 	"""
+	Extraie la liste des hash dont la chaine prise en entree est la concatenation
+	
+	Parametres Obligatoires :
+		- pieces_string : la concatenation en une seule chaine de tous les hash
+		- hash_length : la longueur d'un hash
+		
+	Retour :
+		Une liste dont les elements sont les differents hash de la chaine
+		La liste suit l'ordre dans lequel les hash sont concatenés
 	"""
-	hash_length = LEN_SHA256
 	nb_pieces = ceil( len( pieces_string ) / float( LEN_SHA256 ) ) #On evite un resultat tronque
 	nb_pieces = int( nb_pieces )
 	list_pieces_hash = []
@@ -63,6 +71,19 @@ def extract_list_pieces_hash( pieces_string ):
 	
 def get_pieces_filename_by_hash( dir, list_hash ):
 	"""
+	Recupere toutes les pieces contenues dans la liste de hash prise en entree
+	
+	Parametres Obligatoires :
+		- dir : le dossier ou chercher les pieces
+		- list_hash : liste contenant les hash des pieces cherchees
+		
+	Retour :
+		Un dictionnaire dont les clés sont les hash des pieces, et les elements
+		le nom des fichiers correspondant aux hash
+		
+	Hypothese de depart:
+	SHA256 est suffisamment robuste pour qu'on ne constate pas de collision
+	parmi les fichiers PIECE_FILE_EXTENSION contenu dans source_dir
 	"""
 	part_by_hash = dict()
 	for filename in os.listdir( dir ):
@@ -99,7 +120,17 @@ def get_pieces_filename_by_hash( dir, list_hash ):
 """
 def torrentify( source, torrent_name, target_dir = "./torrent/", piece_length = 1024*64 ):
 	"""
+	Convertit une source en torrent
 	
+	Parametres obligatoires:
+		- source : le nom du fichier/ la liste des noms des fichiers (chemin d'acces relatif inclu)
+			a convertir
+		- torrent_name : le nom du torrent a creer
+	Parametres optionnels:
+		- target_dir : le dossier ou creer le torrent. Sa valeur par defaut est ./torrent/
+		- piece_length : la longueur maximum pour une piece, en bits. Sa valeur par defaut est 64 Ko
+	
+	Note: Le tracker doit modifier le fichier .torrent pour changer l'Annonce
 	"""
 	#Creation du dossier cible
 	if not os.path.exists(target_dir[:-1]):
@@ -118,11 +149,11 @@ def _torrentify_single_file( source, torrent_name, target_dir = "./torrent/", pi
 	Convertit un fichier simple en torrent.
 	
 	Parametres obligatoires:
-		- source : le nom du fichier
+		- source : le nom du fichier a convertir
 		- torrent_name : le nom du torrent a creer
 	Parametres optionnels:
-		- target_dir : le dossier ou creer le torrent
-		- piece_length : longueur de chaque piece contenant
+		- target_dir : le dossier ou creer le torrent. Sa valeur par defaut est ./torrent/
+		- piece_length : la longueur maximum pour une piece, en bits. Sa valeur par defaut est 64 Ko
 	
 	Note: Le tracker doit modifier le fichier .torrent pour changer l'Annonce
 	"""
@@ -159,7 +190,16 @@ def _torrentify_single_file( source, torrent_name, target_dir = "./torrent/", pi
 #NOTE POUR LE FUTUR : N'accepter que les paths relatifs
 def _torrentify_multi_files( sources, torrent_name, target_dir = "./torrent/", piece_length = 1024*64 ):
 	"""
+	Convertit une source multifichier en torrent
 	
+	Parametres obligatoires:
+		- source : la liste des noms de fichiers (chemin relatif inclu) a convertir
+		- torrent_name : le nom du torrent a creer
+	Parametres optionnels:
+		- target_dir : le dossier ou creer le torrent. Sa valeur par defaut est ./torrent/
+		- piece_length : la longueur maximum pour une piece, en bits. Sa valeur par defaut est 64 Ko
+	
+	Note: Le tracker doit modifier le fichier .torrent pour changer l'Annonce
 	"""
 	#Preparation des infos du torrent
 	torrent_info_dict = { "piece length":piece_length, "pieces":"", "name":torrent_name, "files":[] }
@@ -218,10 +258,26 @@ def _torrentify_multi_files( sources, torrent_name, target_dir = "./torrent/", p
 	DETORRENTIFICATION
 ===========================
 """
-def detorrentify( source_dir, torrent_name, target_dir ):
+def detorrentify( source_dir, torrent_name, target_dir=None ):
 	"""
+	Convertit un Torrent en sa source d'origine
 	
+	Parametres Obligatoires :
+		- source_dir : le dossier contenant le torrent
+		- torrent_name : le nom du torrent
+	
+	Parametres Optionnels
+		- target_dir : le dossier ou extraire le resultat final
+			si target_dir n'est pas specifie, le Torrent est extrait dans un
+			dossier de nom *torrent_name*
+	
+	Hypothese de depart: 
+	Tous les fichiers PIECE_FILE_EXTENSION appartenant au torrent sont 
+	contenus dans source_dir
 	"""
+	#
+	if not target_dir:
+		target_dir = torrent_name + "/"
 	#Creation du dossier cible
 	if not os.path.exists(target_dir[:-1]):
 		os.makedirs(target_dir[:-1])
@@ -242,16 +298,19 @@ def detorrentify( source_dir, torrent_name, target_dir ):
 	
 def _detorrentify_single_file( source_dir, torrent_name, torrent_info_dict, target_dir ):
 	"""
+	Convertit le Torrent d'un fichier unique en son fichier d'origine
 	
-	Hypotheses de depart: 
+	Parametres Obligatoires :
+		- source_dir : le dossier contenant le torrent
+		- torrent_name : le nom du torrent
+		- target_dir : le dossier ou extraire le resultat final
+	
+	Hypothese de depart: 
 	Tous les fichiers PIECE_FILE_EXTENSION appartenant au torrent sont 
 	contenus dans source_dir
-	SHA256 est suffisamment robuste pour qu'on ne constate pas de collision
-	parmi les fichiers PIECE_FILE_EXTENSION contenu dans source_dir
-	
 	"""
 	#Recuperation des hash du .TORRENT_FILE_EXTENSION
-	list_pieces_sha = extract_list_pieces_hash( torrent_info_dict["pieces"] )
+	list_pieces_sha = extract_list_pieces_hash( torrent_info_dict["pieces"], LEN_SHA256 )
 	#Recuperation des hash des .PIECE_FILE_EXTENSION
 	part_by_hash = get_pieces_filename_by_hash( source_dir, list_pieces_sha )
 	#Reecriture du fichier contenu dans le torrent
@@ -266,16 +325,19 @@ def _detorrentify_single_file( source_dir, torrent_name, torrent_info_dict, targ
 	
 def _detorrentify_multi_files( source_dir, torrent_name, torrent_info_dict, target_dir ):
 	"""
+	Convertit un Torrent Multifichiers en ses fichiers d'origine
 	
-	Hypotheses de depart: 
+	Parametres Obligatoires :
+		- source_dir : le dossier contenant le torrent
+		- torrent_name : le nom du torrent
+		- target_dir : le dossier ou extraire le resultat final
+	
+	Hypothese de depart: 
 	Tous les fichiers PIECE_FILE_EXTENSION appartenant au torrent sont 
 	contenus dans source_dir
-	SHA256 est suffisamment robuste pour qu'on ne constate pas de collision
-	parmi les fichiers PIECE_FILE_EXTENSION contenu dans source_dir
-	
 	"""
 	#Recuperation des hash du .TORRENT_FILE_EXTENSION
-	list_pieces_sha = extract_list_pieces_hash( torrent_info_dict["pieces"] )
+	list_pieces_sha = extract_list_pieces_hash( torrent_info_dict["pieces"], LEN_SHA256 )
 	#Recuperation des hash des .PIECE_FILE_EXTENSION
 	part_by_hash = get_pieces_filename_by_hash( source_dir, list_pieces_sha )
 	"""
