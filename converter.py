@@ -32,13 +32,71 @@ import hashlib # Hash SHA256
 import bencoding # Implementation du bencode
 
 """
-Constantes de module
+===================
+	CONSTANTES
+===================
 """
 LEN_SHA256 = 64 #Longueur d'un hash par definition de SHA256 (x2 car on utilise hexdigest). 
 #Il est cependant possible de tester avec LEN_SHA256 = len( hashlib.sha256("").hexdigest() )
 PIECE_FILE_EXTENSION = ".bpart"
 TORRENT_FILE_EXTENSION = ".torrent"
 
+
+"""
+====================
+	UTILITAIRES
+====================
+"""
+def extract_list_pieces_hash( pieces_string ):
+	"""
+	"""
+	hash_length = LEN_SHA256
+	nb_pieces = ceil( len( pieces_string ) / float( LEN_SHA256 ) ) #On evite un resultat tronque
+	nb_pieces = int( nb_pieces )
+	list_pieces_hash = []
+	for i in range( nb_pieces ):
+		#Note : cette methode respecte l'ordre de concatenation (permet de savoir l'ordre des pieces)
+		list_pieces_hash.append( pieces_string[ i*hash_length : (i+1)*hash_length ] )
+	#
+	return list_pieces_hash
+	
+	
+def get_pieces_filename_by_hash( dir, list_hash ):
+	"""
+	"""
+	part_by_hash = dict()
+	for filename in os.listdir( dir ):
+		"""
+		Test plus robuste mais moins lisible :
+		
+		index_PF_ext = filename.find(PIECE_FILE_EXTENSION)
+		if ( index_PF_ext > 0 and index_PF_ext == len(filename) - len(PIECE_FILE_EXTENSION) ):
+			etc...
+			
+		Il verifie que PIECE_FILE_EXTENSION est bien l'extension du fichier et pas juste
+		une partie de son nom, a la machin.bidule.truc
+		En pratique je ne l'ai pas implemente parce que je n'ai pas jugé la securité 
+		qu'il apportait suffisamment interessante (ouvrir un fichier de ce genre n'est pas
+		nocif en soi si c'est accidentel et un assaillant la contournera facilement) et
+		surtout parce qu'il était tres peu probable que le cas limite ainsi couvert se 
+		presente
+		"""
+		if PIECE_FILE_EXTENSION in filename:
+			with open( dir + filename, "rb" ) as file:
+				#On hash le fichier pour comparer aux hash existants
+				file_hash = hashlib.sha256( file.read() ).hexdigest()
+				#Si il fait partie des fichiers hashé on l'indexe
+				if file_hash in list_hash :
+					part_by_hash[file_hash] = filename
+	#
+	return part_by_hash
+
+
+"""
+=========================
+	TORRENTIFICATION
+=========================
+"""
 def torrentify( source, torrent_name, target_dir = "./torrent/", piece_length = 1024*64 ):
 	"""
 	
@@ -157,7 +215,11 @@ def torrentify_multi_files( sources, torrent_name, target_dir = "./torrent/", pi
 		f.write( bencoding.getEncodedObject( torrent_dict ) )
 	#Pas de retour necessaire
 	
-
+"""
+===========================
+	DETORRENTIFICATION
+===========================
+"""
 def detorrentify_single_file( source_dir, torrent_name, target_dir ):
 	"""
 	
@@ -176,36 +238,10 @@ def detorrentify_single_file( source_dir, torrent_name, target_dir ):
 	with open( source_dir + torrent_name + TORRENT_FILE_EXTENSION, "r" ) as file:
 		#On sait qu'un fichier torrent contient un dictionnaire
 		torrent_info_dict = bencoding.getDecodedObject( file.read() )[0]["info"]
-	#Recuperation des hash du .torrent
-	nb_pieces = ceil( len( torrent_info_dict["pieces"] ) / float( LEN_SHA256 ) )
-	nb_pieces = int( nb_pieces )
-	list_pieces_sha = []
-	for i in range( nb_pieces ):
-		#Note : cette methode respecte l'ordre de concatenation (permet de savoir l'ordre des pieces)
-		list_pieces_sha.append( torrent_info_dict["pieces"][ i*LEN_SHA256 : (i+1)*LEN_SHA256 ] )
-	#Recuperation des hash des .partition
-	part_by_hash = dict()
-	for filename in os.listdir( source_dir ):
-		"""
-		Test plus robuste mais moins lisible :
-		
-		index_PF_ext = filename.find(PIECE_FILE_EXTENSION)
-		if ( index_PF_ext > 0 and index_PF_ext == len(filename) - len(PIECE_FILE_EXTENSION) ):
-			etc...
-			
-		Il verifie que PIECE_FILE_EXTENSION est bien l'extension du fichier et pas juste
-		une partie de son nom, a la machin.bidule.truc
-		En pratique je ne l'ai pas implemente parce que je n'ai pas jugé la securité 
-		qu'il apportait suffisamment interessante (ouvrir un fichier de ce genre n'est pas
-		nocif en soi si c'est accidentel et un assaillant la contournera facilement) et
-		surtout parce qu'il était tres peu probable que le cas limite ainsi couvert se 
-		presente
-		"""
-		if PIECE_FILE_EXTENSION in filename:
-			with open( source_dir + filename, "rb" ) as file:
-				file_hash = hashlib.sha256( file.read() ).hexdigest()
-				if file_hash in list_pieces_sha :
-					part_by_hash[file_hash] = filename
+	#Recuperation des hash du .TORRENT_FILE_EXTENSION
+	list_pieces_sha = extract_list_pieces_hash( torrent_info_dict["pieces"] )
+	#Recuperation des hash des .PIECE_FILE_EXTENSION
+	part_by_hash = get_pieces_filename_by_hash( source_dir, list_pieces_sha )
 	#Reecriture du fichier contenu dans le torrent
 	with io.open( target_dir + torrent_info_dict["name"], "wb" ) as target:
 		for hash in list_pieces_sha:
@@ -234,22 +270,10 @@ def detorrentify_multi_files( source_dir, torrent_name, target_dir ):
 	with open( source_dir + torrent_name + TORRENT_FILE_EXTENSION, "r" ) as file:
 		#On sait qu'un fichier torrent contient un dictionnaire
 		torrent_info_dict = bencoding.getDecodedObject( file.read() )[0]["info"]
-	#Recuperation des hash du .torrent
-	nb_pieces = ceil( len( torrent_info_dict["pieces"] ) / float( LEN_SHA256 ) )
-	nb_pieces = int( nb_pieces )
-	list_pieces_sha = []
-	for i in range( nb_pieces ):
-		#Note : cette methode respecte l'ordre de concatenation (permet de savoir l'ordre des pieces)
-		list_pieces_sha.append( torrent_info_dict["pieces"][ i*LEN_SHA256 : (i+1)*LEN_SHA256 ] )
-	#Recuperation des hash des .partition
-	part_by_hash = dict()
-	for filename in os.listdir( source_dir ):
-		#Note : CF detorrentify_single_file pour un test alternatif
-		if PIECE_FILE_EXTENSION in filename:
-			with open( source_dir + filename, "rb" ) as file:
-				file_hash = hashlib.sha256( file.read() ).hexdigest()
-				if file_hash in list_pieces_sha :
-					part_by_hash[file_hash] = filename
+	#Recuperation des hash du .TORRENT_FILE_EXTENSION
+	list_pieces_sha = extract_list_pieces_hash( torrent_info_dict["pieces"] )
+	#Recuperation des hash des .PIECE_FILE_EXTENSION
+	part_by_hash = get_pieces_filename_by_hash( source_dir, list_pieces_sha )
 	"""
 	Reecriture des fichiers
 	"""
