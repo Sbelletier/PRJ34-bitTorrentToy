@@ -3,6 +3,17 @@
 Ce fichier sert a convertir un fichier/un groupe de fichier
 en fragments de fichier pour servir de torrent
 
+
+Note d'implementation pour la recuperation des pieces:
+	Cette methode de recuperation des pieces est couteuse en temps (elle necessite une lecture
+	supplementaire par piece). 
+	Je l'ai choisi parce qu'elle est robuste (sauf collision, seules les piece du torrent
+	seront recuperées) et parce qu'elle me permet de ne pas garder toutes les pieces en memoire
+	en même temps dans le cas d'un fichier de torrent volumineux (par exemple l'integral des
+	films et musique appartenant au domaine public lors d'un archivage).
+	Il s'agit donc d'un choix fait lors que je l'ai conçue en faveur de la RAM au detriment du temps
+	d'execution
+
 Note: j'ai choisi SHA256 plutot que SHA1 parce que la norme la plus recente de BitTorrent
 (v2 http://www.bittorrent.org/beps/bep_0052.html) a abandonné SHA1 pour SHA256
 
@@ -12,6 +23,8 @@ J'ai donc choisi d'utiliser hexdigest pour esquiver le probleme
 
 TODO : Detecter a la detorrentification si il manque des pieces et envoyer une erreur
 """
+from math import ceil # Arrondi au superieur
+
 import os # Gerer les dossier
 import io # Lecture bufferisée de fichier
 import hashlib # Hash SHA256 
@@ -94,7 +107,7 @@ def torrentify_multi_files( sources, torrent_name, target_dir = "./torrent/", pi
 		os.makedirs(target_dir[:-1])
 	#Preparation des infos du torrent
 	torrent_info_dict = { "piece length":piece_length, "pieces":"", "name":torrent_name, "files":[] }
-	#Imformation necessaires a l'ecriture des pieces
+	#Information necessaires a l'ecriture des pieces
 	piece_no = 1
 	piece_content = ""
 	#On ouvre la premiere piece
@@ -165,6 +178,7 @@ def detorrentify_single_file( source_dir, torrent_name, target_dir ):
 		torrent_info_dict = bencoding.getDecodedObject( file.read() )[0]["info"]
 	#Recuperation des hash du .torrent
 	nb_pieces = ceil( len( torrent_info_dict["pieces"] ) / float( LEN_SHA256 ) )
+	nb_pieces = int( nb_pieces )
 	list_pieces_sha = []
 	for i in range( nb_pieces ):
 		#Note : cette methode respecte l'ordre de concatenation (permet de savoir l'ordre des pieces)
@@ -192,17 +206,6 @@ def detorrentify_single_file( source_dir, torrent_name, target_dir ):
 				file_hash = hashlib.sha256( file.read() ).hexdigest()
 				if file_hash in list_pieces_sha :
 					part_by_hash[file_hash] = filename
-	"""
-	Note d'implementation :
-	Cette methode de recuperation des pieces est couteuse en temps (elle necessite une lecture
-	supplementaire par piece). 
-	Je l'ai choisi parce qu'elle est robuste (sauf collision, seules les piece du torrent
-	seront recuperées) et parce qu'elle me permet de ne pas garder toutes les pieces en memoire
-	en même temps dans le cas d'un fichier de torrent volumineux (par exemple l'integral des
-	films et musique appartenant au domaine public lors d'un archivage).
-	Il s'agit donc d'un choix fait lors que je l'ai conçue en faveur de la RAM au detriment du temps
-	d'execution
-	"""
 	#Reecriture du fichier contenu dans le torrent
 	with io.open( target_dir + torrent_info_dict["name"], "wb" ) as target:
 		for hash in list_pieces_sha:
@@ -212,4 +215,81 @@ def detorrentify_single_file( source_dir, torrent_name, target_dir ):
 	#Rien a retourner
 
 
+	
+def detorrentify_multi_files( source_dir, torrent_name, target_dir ):
+	"""
+	
+	Hypotheses de depart: 
+	Tous les fichiers PIECE_FILE_EXTENSION appartenant au torrent sont 
+	contenus dans source_dir
+	SHA256 est suffisamment robuste pour qu'on ne constate pas de collision
+	parmi les fichiers PIECE_FILE_EXTENSION contenu dans source_dir
+	
+	"""
+	#Creation du dossier cible
+	if not os.path.exists(target_dir[:-1]):
+		os.makedirs(target_dir[:-1])
+	#Recuperation du dictionnaire du torrent
+	torrent_info_dict = dict()
+	with open( source_dir + torrent_name + TORRENT_FILE_EXTENSION, "r" ) as file:
+		#On sait qu'un fichier torrent contient un dictionnaire
+		torrent_info_dict = bencoding.getDecodedObject( file.read() )[0]["info"]
+	#Recuperation des hash du .torrent
+	nb_pieces = ceil( len( torrent_info_dict["pieces"] ) / float( LEN_SHA256 ) )
+	nb_pieces = int( nb_pieces )
+	list_pieces_sha = []
+	for i in range( nb_pieces ):
+		#Note : cette methode respecte l'ordre de concatenation (permet de savoir l'ordre des pieces)
+		list_pieces_sha.append( torrent_info_dict["pieces"][ i*LEN_SHA256 : (i+1)*LEN_SHA256 ] )
+	#Recuperation des hash des .partition
+	part_by_hash = dict()
+	for filename in os.listdir( source_dir ):
+		#Note : CF detorrentify_single_file pour un test alternatif
+		if PIECE_FILE_EXTENSION in filename:
+			with open( source_dir + filename, "rb" ) as file:
+				file_hash = hashlib.sha256( file.read() ).hexdigest()
+				if file_hash in list_pieces_sha :
+					part_by_hash[file_hash] = filename
+	"""
+	Reecriture des fichiers
+	"""
+	file_info_list = torrent_info_dict["files"]
+	#Information necessaires a la lecture des pieces
+	piece_length = torrent_info_dict["piece length"]
+	piece_idx = 0
+	#On ouvre la premiere piece
+	current_piece = open( source_dir + part_by_hash[ list_pieces_sha[piece_idx] ], mode="rb" )
+	#Iteration sur tous les fichiers
+	for file_info_dict in file_info_list:
+		#On prepare d abord le dossier d'arrivee
+		file_path = target_dir+"/"
+		for dir in file_info_dict["path"][:-1]:
+			file_path += dir + "/"
+		if not os.path.exists(file_path):
+			os.makedirs( file_path[:-1] )
+		#Recuperation du nom complet du fichier
+		file_path += file_info_dict["path"][-1]
+		#
+		remaining_bytes = file_info_dict["length"]
+		with io.open( file_path, "wb" ) as target:
+			while remaining_bytes > 0:
+				#On lit au maximum piece_length pour eviter de detruire la memoire
+				byte_string = current_piece.read( min( piece_length, remaining_bytes ) )
+				#Si on a lu l'entiereté de la piece actuelle
+				while byte_string == "":
+					#On ferme la piece
+					current_piece.close()
+					#On ouvre la suivante
+					piece_idx += 1
+					current_piece = open( source_dir + part_by_hash[ list_pieces_sha[piece_idx] ], mode="rb" )
+					#On la lit
+					byte_string = current_piece.read( min( piece_length, remaining_bytes ) )
+				#On copie dans le fichier de sortie
+				target.write( byte_string )
+				remaining_bytes -= len( byte_string )
+			target.flush()
+	#On ferme la derniere piece
+	if not current_piece.closed:
+		current_piece.close() 
+	#Rien a retourner
 #	
