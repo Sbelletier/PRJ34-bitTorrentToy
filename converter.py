@@ -63,7 +63,7 @@ def torrentify_single_file( source, torrent_name, target_dir = "./torrent/", pie
 		byte_string = f.read(piece_length)
 		while byte_string != "":
 			#On ouvre le fichier de piece
-			current_piece = open( target_dir + "piece_" + str(piece_no) + PIECE_FILE_EXTENSION, mode="wb" )
+			current_piece = open( target_dir + "_" + torrent_name + "_piece_" + str(piece_no) + PIECE_FILE_EXTENSION, mode="wb" )
 			#On copie le contenu
 			current_piece.write( byte_string )
 			#Hash du contenu de la piece
@@ -98,7 +98,7 @@ def torrentify_multi_files( sources, torrent_name, target_dir = "./torrent/", pi
 	piece_no = 1
 	piece_content = ""
 	#On ouvre la premiere piece
-	current_piece = open( target_dir + "piece_" + str(piece_no) + PIECE_FILE_EXTENSION, mode="wb" )
+	current_piece = open( target_dir + "_" + torrent_name + "_piece_" + str(piece_no) + PIECE_FILE_EXTENSION, mode="wb" )
 	#On boucle sur chaque fichier source
 	for source in sources:
 		#Creation du dictionnaire pour le fichier
@@ -116,7 +116,7 @@ def torrentify_multi_files( sources, torrent_name, target_dir = "./torrent/", pi
 			while byte_string != "" :
 				#Si on cree une nouvelle piece, on l'ouvre (le test est placé ici pour ne pas ouvrir de piece excessive)
 				if piece_content == "":
-					current_piece = open( target_dir + "piece_" + str(piece_no) + PIECE_FILE_EXTENSION, mode="wb" )
+					current_piece = open( target_dir + "_" + torrent_name + "_piece_" + str(piece_no) + PIECE_FILE_EXTENSION, mode="wb" )
 				#On ecrit dans le fichier
 				current_piece.write( byte_string )
 				#Preparation 
