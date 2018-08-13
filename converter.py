@@ -9,6 +9,8 @@ Note: j'ai choisi SHA256 plutot que SHA1 parce que la norme la plus recente de B
 Note 2: en theorie, je devrais utiliser la methode digest plutot que hexdigest, mais j'ai 
 rencontré des problemes d'encodage qui m'ont paru avoir peu a voir avec le sujet.
 J'ai donc choisi d'utiliser hexdigest pour esquiver le probleme
+
+TODO : Detecter a la detorrentification si il manque des pieces et envoyer une erreur
 """
 import os # Gerer les dossier
 import io # Lecture bufferisée de fichier
@@ -72,10 +74,10 @@ def torrentify_single_file( source, torrent_name, target_dir = "./torrent/", pie
 			current_piece.close()
 			#Preparation de la piece suivante
 			piece_no += 1
-			byte_string = f.read(piece_length)
+			byte_string = f.read( piece_length )
 	#Preparation du dictionnaire final du torrent
 	torrent_dict = { "announce":"", "info":torrent_info_dict }
-	
+	#
 	with open( target_dir + torrent_name + TORRENT_FILE_EXTENSION , "w" ) as f:
 		f.write( bencoding.getEncodedObject( torrent_dict ) )
 	#Pas de retour necessaire
@@ -84,7 +86,63 @@ def torrentify_single_file( source, torrent_name, target_dir = "./torrent/", pie
 	
 #NOTE POUR LE FUTUR : N'accepter que les paths relatifs
 def torrentify_multi_files( sources, torrent_name, target_dir = "./torrent/", piece_length = 1024*64 ):
-	pass
+	"""
+	
+	"""
+	#Creation du dossier cible
+	if not os.path.exists(target_dir[:-1]):
+		os.makedirs(target_dir[:-1])
+	#Preparation des infos du torrent
+	torrent_info_dict = { "piece length":piece_length, "pieces":"", "name":torrent_name, "files":[] }
+	#Imformation necessaires a l'ecriture des pieces
+	piece_no = 1
+	piece_content = ""
+	#On ouvre la premiere piece
+	current_piece = open( target_dir + "piece_" + str(piece_no) + PIECE_FILE_EXTENSION, mode="wb" )
+	#On boucle sur chaque fichier source
+	for source in sources:
+		#Creation du dictionnaire pour le fichier
+		source.replace("\\", "/")
+		file_path = source.split("/")
+		# (On enleve ce qui pourrait etre un disque dur par precaution)
+		for dir in file_path:
+			if ':' in dir:
+				file_path.remove( dir )
+		file_info_dict = {"path":file_path, "length":0}
+		#Ouverture du fichier a convertir
+		with io.open( source, mode="rb") as f:
+			#Copie piece par piece
+			byte_string = f.read( piece_length - len( piece_content ) )
+			while byte_string != "" :
+				#Si on cree une nouvelle piece, on l'ouvre (le test est placé ici pour ne pas ouvrir de piece excessive)
+				if piece_content == "":
+					current_piece = open( target_dir + "piece_" + str(piece_no) + PIECE_FILE_EXTENSION, mode="wb" )
+				#On ecrit dans le fichier
+				current_piece.write( byte_string )
+				#Preparation 
+				piece_content += byte_string
+				#Si la piece actuelle est complete 
+				if len( piece_content ) == piece_length:
+					current_piece.close()
+					torrent_info_dict["pieces"] += hashlib.sha256( piece_content ).hexdigest()
+					#Remise a zero pour la prochaine piece
+					piece_no += 1
+					piece_content = ""
+				#Maj du dictionnaire du fichier
+				file_info_dict["length"] += len( byte_string )
+				#Lecture du bout suivant du fichier
+				byte_string = f.read( piece_length - len( piece_content ) )
+		torrent_info_dict["files"].append( file_info_dict )
+	#On ferme la derniere piece
+	if not current_piece.closed:
+		torrent_info_dict["pieces"] += hashlib.sha256( piece_content ).hexdigest()
+		current_piece.close() 
+	#Preparation du dictionnaire final du torrent
+	torrent_dict = { "announce":"", "info":torrent_info_dict }
+	#
+	with open( target_dir + torrent_name + TORRENT_FILE_EXTENSION , "w" ) as f:
+		f.write( bencoding.getEncodedObject( torrent_dict ) )
+	#Pas de retour necessaire
 	
 
 def detorrentify_single_file( source_dir, torrent_name, target_dir ):
@@ -106,7 +164,7 @@ def detorrentify_single_file( source_dir, torrent_name, target_dir ):
 		#On sait qu'un fichier torrent contient un dictionnaire
 		torrent_info_dict = bencoding.getDecodedObject( file.read() )[0]["info"]
 	#Recuperation des hash du .torrent
-	nb_pieces = len( torrent_info_dict["pieces"] ) / LEN_SHA256 
+	nb_pieces = ceil( len( torrent_info_dict["pieces"] ) / float( LEN_SHA256 ) )
 	list_pieces_sha = []
 	for i in range( nb_pieces ):
 		#Note : cette methode respecte l'ordre de concatenation (permet de savoir l'ordre des pieces)
@@ -152,5 +210,6 @@ def detorrentify_single_file( source_dir, torrent_name, target_dir ):
 				target.write( piece.read() )
 		target.flush()
 	#Rien a retourner
+
 
 #	
