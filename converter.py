@@ -101,15 +101,19 @@ def torrentify( source, torrent_name, target_dir = "./torrent/", piece_length = 
 	"""
 	
 	"""
+	#Creation du dossier cible
+	if not os.path.exists(target_dir[:-1]):
+		os.makedirs(target_dir[:-1])
+	#
 	if type(source) == str:
-		torrentify_single_file( source, torrent_name, target_dir, piece_length )
+		_torrentify_single_file( source, torrent_name, target_dir, piece_length )
 	elif type(source) == list:
-		torrentify_multi_files( source, torrent_name, target_dir, piece_length )
+		_torrentify_multi_files( source, torrent_name, target_dir, piece_length )
 	#No return
 
 
 
-def torrentify_single_file( source, torrent_name, target_dir = "./torrent/", piece_length = 1024*64 ):
+def _torrentify_single_file( source, torrent_name, target_dir = "./torrent/", piece_length = 1024*64 ):
 	"""
 	Convertit un fichier simple en torrent.
 	
@@ -122,9 +126,6 @@ def torrentify_single_file( source, torrent_name, target_dir = "./torrent/", pie
 	
 	Note: Le tracker doit modifier le fichier .torrent pour changer l'Annonce
 	"""
-	#Creation du dossier cible
-	if not os.path.exists(target_dir[:-1]):
-		os.makedirs(target_dir[:-1])
 	#Preparation des infos du torrent
 	torrent_info_dict = { "piece length":piece_length, "pieces":"", "name":source, "length":0 }
 	piece_no = 1
@@ -156,13 +157,10 @@ def torrentify_single_file( source, torrent_name, target_dir = "./torrent/", pie
 
 	
 #NOTE POUR LE FUTUR : N'accepter que les paths relatifs
-def torrentify_multi_files( sources, torrent_name, target_dir = "./torrent/", piece_length = 1024*64 ):
+def _torrentify_multi_files( sources, torrent_name, target_dir = "./torrent/", piece_length = 1024*64 ):
 	"""
 	
 	"""
-	#Creation du dossier cible
-	if not os.path.exists(target_dir[:-1]):
-		os.makedirs(target_dir[:-1])
 	#Preparation des infos du torrent
 	torrent_info_dict = { "piece length":piece_length, "pieces":"", "name":torrent_name, "files":[] }
 	#Information necessaires a l'ecriture des pieces
@@ -220,7 +218,29 @@ def torrentify_multi_files( sources, torrent_name, target_dir = "./torrent/", pi
 	DETORRENTIFICATION
 ===========================
 """
-def detorrentify_single_file( source_dir, torrent_name, target_dir ):
+def detorrentify( source_dir, torrent_name, target_dir ):
+	"""
+	
+	"""
+	#Creation du dossier cible
+	if not os.path.exists(target_dir[:-1]):
+		os.makedirs(target_dir[:-1])
+	#Recuperation du dictionnaire du torrent
+	torrent_info_dict = dict()
+	with open( source_dir + torrent_name + TORRENT_FILE_EXTENSION, "r" ) as file:
+		#On sait qu'un fichier torrent contient un dictionnaire, on ne retient donc pas le titre
+		torrent_dict, _ = bencoding.getDecodedObject( file.read() )
+		torrent_info_dict = torrent_dict["info"]
+	#
+	if "files" in torrent_info_dict:
+		_detorrentify_multi_files( source_dir, torrent_name, torrent_info_dict, target_dir)
+	elif "length" in torrent_info_dict:
+		_detorrentify_single_file( source_dir, torrent_name, torrent_info_dict, target_dir)
+	#No return
+
+
+	
+def _detorrentify_single_file( source_dir, torrent_name, torrent_info_dict, target_dir ):
 	"""
 	
 	Hypotheses de depart: 
@@ -230,14 +250,6 @@ def detorrentify_single_file( source_dir, torrent_name, target_dir ):
 	parmi les fichiers PIECE_FILE_EXTENSION contenu dans source_dir
 	
 	"""
-	#Creation du dossier cible
-	if not os.path.exists(target_dir[:-1]):
-		os.makedirs(target_dir[:-1])
-	#Recuperation du dictionnaire du torrent
-	torrent_info_dict = dict()
-	with open( source_dir + torrent_name + TORRENT_FILE_EXTENSION, "r" ) as file:
-		#On sait qu'un fichier torrent contient un dictionnaire
-		torrent_info_dict = bencoding.getDecodedObject( file.read() )[0]["info"]
 	#Recuperation des hash du .TORRENT_FILE_EXTENSION
 	list_pieces_sha = extract_list_pieces_hash( torrent_info_dict["pieces"] )
 	#Recuperation des hash des .PIECE_FILE_EXTENSION
@@ -252,7 +264,7 @@ def detorrentify_single_file( source_dir, torrent_name, target_dir ):
 
 
 	
-def detorrentify_multi_files( source_dir, torrent_name, target_dir ):
+def _detorrentify_multi_files( source_dir, torrent_name, torrent_info_dict, target_dir ):
 	"""
 	
 	Hypotheses de depart: 
@@ -262,14 +274,6 @@ def detorrentify_multi_files( source_dir, torrent_name, target_dir ):
 	parmi les fichiers PIECE_FILE_EXTENSION contenu dans source_dir
 	
 	"""
-	#Creation du dossier cible
-	if not os.path.exists(target_dir[:-1]):
-		os.makedirs(target_dir[:-1])
-	#Recuperation du dictionnaire du torrent
-	torrent_info_dict = dict()
-	with open( source_dir + torrent_name + TORRENT_FILE_EXTENSION, "r" ) as file:
-		#On sait qu'un fichier torrent contient un dictionnaire
-		torrent_info_dict = bencoding.getDecodedObject( file.read() )[0]["info"]
 	#Recuperation des hash du .TORRENT_FILE_EXTENSION
 	list_pieces_sha = extract_list_pieces_hash( torrent_info_dict["pieces"] )
 	#Recuperation des hash des .PIECE_FILE_EXTENSION
