@@ -157,6 +157,18 @@ def _torrentify_single_file( source, torrent_name, target_dir = "./torrent/", pi
 	
 	Note: Le tracker doit modifier le fichier .torrent pour changer l'Annonce
 	"""
+	#preparation du nom de fichier
+	source.replace("\\", "/")
+	file_name = ""
+	file_path = source.split("/")
+	# (On enleve ce qui pourrait etre un disque dur par precaution)
+	for dir in file_path:
+		if ':' in dir or "." == dir or ".." == dir:
+			file_path.remove( dir )
+		else:
+			file_name += dir 
+			if not( dir == file_path[-1] ):
+				file_name += "/"
 	#Preparation des infos du torrent
 	torrent_info_dict = { "piece length":piece_length, "pieces":"", "name":source, "length":0 }
 	piece_no = 1
@@ -215,7 +227,7 @@ def _torrentify_multi_files( sources, torrent_name, target_dir = "./torrent/", p
 		file_path = source.split("/")
 		# (On enleve ce qui pourrait etre un disque dur par precaution)
 		for dir in file_path:
-			if ':' in dir:
+			if ':' in dir or "." == dir or ".." == dir:
 				file_path.remove( dir )
 		file_info_dict = {"path":file_path, "length":0}
 		#Ouverture du fichier a convertir
@@ -313,8 +325,10 @@ def _detorrentify_single_file( source_dir, torrent_name, torrent_info_dict, targ
 	list_pieces_sha = extract_list_pieces_hash( torrent_info_dict["pieces"], LEN_SHA256 )
 	#Recuperation des hash des .PIECE_FILE_EXTENSION
 	part_by_hash = get_pieces_filename_by_hash( source_dir, list_pieces_sha )
+	#
+	file_path = torrent_info_dict["name"]
 	#Reecriture du fichier contenu dans le torrent
-	with io.open( target_dir + torrent_info_dict["name"], "wb" ) as target:
+	with io.open( target_dir + file_path, "wb" ) as target:
 		for hash in list_pieces_sha:
 			with open( source_dir + part_by_hash[hash], "rb" ) as piece:
 				target.write( piece.read() )
@@ -352,9 +366,13 @@ def _detorrentify_multi_files( source_dir, torrent_name, torrent_info_dict, targ
 	#Iteration sur tous les fichiers
 	for file_info_dict in file_info_list:
 		#On prepare d abord le dossier d'arrivee
-		file_path = target_dir+"/"
-		for dir in file_info_dict["path"][:-1]:
-			file_path += dir + "/"
+		file_path = target_dir
+		for folder in file_info_dict["path"][:-1]:
+			#On saute les chemins relatifs
+			if folder == "..":
+				continue
+			else:
+				file_path += folder + "/"
 		if not os.path.exists(file_path):
 			os.makedirs( file_path[:-1] )
 		#Recuperation du nom complet du fichier
