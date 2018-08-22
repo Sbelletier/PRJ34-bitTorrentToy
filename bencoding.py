@@ -149,7 +149,8 @@ def getEncodedDict( dico ):
     Renvoie la chaine encodant le dictionnaire pris en paramètre
     """
     string = "d"
-    keys = dico.keys().sort()
+    keys = dico.keys()
+    keys.sort()
     for key in keys:
         string += getEncodedString(key)
         string += getEncodedObject( dico[key] )
