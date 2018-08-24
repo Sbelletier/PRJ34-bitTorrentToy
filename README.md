@@ -14,4 +14,4 @@ Simple (french) toy implementation of the BitTorrent Protocol
 - bottle.py (included with repository)
 
 ## Personal notes in the event of a compatibility to Python 3.X
-- Converter.py will need to take care of the byte strings being bytes and note bits
+- Converter.py will need to take care of the byte strings as Python 3 needs them
