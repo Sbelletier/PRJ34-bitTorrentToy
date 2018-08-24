@@ -2,6 +2,7 @@
 """
 IMPORTS COMPATIBLES AVEC PYTHON 3
 """
+from __future__ import print_function
 from future.standard_library import install_aliases
 install_aliases()
 
@@ -44,9 +45,9 @@ def dummy_get_tracker():
     answer = request.urlopen(url).read()#Note : Envoyé en tant que bytestring parce que relou
     answer_dict, _ = bencoding.getDecodedObject( answer.decode("ascii") )
 
-    print answer
-    print answer[0]
-    print answer_dict
+    print( answer )
+    print( answer[0] )
+    print( answer_dict )
 
 
 if __name__ == '__main__':
