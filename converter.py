@@ -14,13 +14,6 @@ Note d'implementation pour la recuperation des pieces:
 	Il s'agit donc d'un choix fait lors que je l'ai conçue en faveur de la RAM au detriment du temps
 	d'execution
 
-Note: j'ai choisi SHA256 plutot que SHA1 parce que la norme la plus recente de BitTorrent
-(v2 http://www.bittorrent.org/beps/bep_0052.html) a abandonné SHA1 pour SHA256
-
-Note 2: en theorie, je devrais utiliser la methode digest plutot que hexdigest, mais j'ai 
-rencontré des problemes d'encodage qui m'ont paru avoir peu a voir avec le sujet.
-J'ai donc choisi d'utiliser hexdigest pour esquiver le probleme
-
 TODO : Detecter a la detorrentification si il manque des pieces et envoyer une erreur
 """
 from math import ceil # Arrondi au superieur
@@ -30,7 +23,8 @@ import io # Lecture bufferisée de fichier
 
 
 import bencoding # Implementation du bencode
-from toyUtils import LEN_SHA256, PIECE_FILE_EXTENSION, TORRENT_FILE_EXTENSION, toy_hash
+from toy_utils import LEN_SHA256, toy_digest
+from toy_utils import PIECE_FILE_EXTENSION, TORRENT_FILE_EXTENSION
 
 
 """
@@ -96,7 +90,7 @@ def get_pieces_filename_by_hash( dir, list_hash ):
 		if PIECE_FILE_EXTENSION in filename:
 			with open( dir + filename, "rb" ) as file:
 				#On hash le fichier pour comparer aux hash existants
-				file_hash = toy_hash( file.read() ).hexdigest()
+				file_hash = toy_digest( file.read() )
 				#Si il fait partie des fichiers hashé on l'indexe
 				if file_hash in list_hash :
 					part_by_hash[file_hash] = filename
@@ -173,7 +167,7 @@ def _torrentify_single_file( source, torrent_name, target_dir = "./torrent/", pi
 			#On copie le contenu
 			current_piece.write( byte_string )
 			#Hash du contenu de la piece
-			torrent_info_dict["pieces"] += toy_hash( byte_string ).hexdigest()
+			torrent_info_dict["pieces"] += toy_digest( byte_string )
 			#Mise a jour de la longueur du fichier
 			torrent_info_dict["length"] += len( byte_string )
 			#Fermeture du fichier
@@ -236,7 +230,7 @@ def _torrentify_multi_files( sources, torrent_name, target_dir = "./torrent/", p
 				#Si la piece actuelle est complete 
 				if len( piece_content ) == piece_length:
 					current_piece.close()
-					torrent_info_dict["pieces"] += toy_hash( piece_content ).hexdigest()
+					torrent_info_dict["pieces"] += toy_digest( piece_content )
 					#Remise a zero pour la prochaine piece
 					piece_no += 1
 					piece_content = ""
@@ -247,7 +241,7 @@ def _torrentify_multi_files( sources, torrent_name, target_dir = "./torrent/", p
 		torrent_info_dict["files"].append( file_info_dict )
 	#On ferme la derniere piece
 	if not current_piece.closed:
-		torrent_info_dict["pieces"] += toy_hash( piece_content ).hexdigest()
+		torrent_info_dict["pieces"] += toy_digest( piece_content )
 		current_piece.close() 
 	#Preparation du dictionnaire final du torrent
 	torrent_dict = { "announce":"", "info":torrent_info_dict }

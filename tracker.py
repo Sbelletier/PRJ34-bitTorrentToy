@@ -12,9 +12,9 @@ import bencoding
 
 from tracking_server import server
 
-from toyUtils import  PIECE_FILE_EXTENSION, TORRENT_FILE_EXTENSION
-from toyUtils import LEN_SHA256, toy_hash
-from toyUtils import TRACKER_INTERVAL
+from toy_utils import  PIECE_FILE_EXTENSION, TORRENT_FILE_EXTENSION
+from toy_utils import LEN_SHA256, toy_digest
+from toy_utils import TRACKER_INTERVAL
 
 """
 ========================
@@ -140,7 +140,7 @@ class Torrent_track( object ):
             torrent_dict, _ = bencoding.getDecodedObject( file.read() )
             self.info = torrent_dict["info"]
             coded_info_dict = bencoding.getEncodedDict( self.info )
-            self.info_hash = toy_hash( coded_info_dict ).hexdigest()
+            self.info_hash = toy_digest( coded_info_dict )
         self.complete = 1 #Au moins un peer a recupere le torrent (la seed originale)
         self.peers = 1 #idem 
 

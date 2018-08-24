@@ -1,6 +1,6 @@
 #-*- coding:utf-8 -*-
 """
-IMPORTS COMPATIBLE AVEC PYTHON 3
+IMPORTS COMPATIBLES AVEC PYTHON 3
 """
 from future.standard_library import install_aliases
 install_aliases()
@@ -13,7 +13,7 @@ import urllib.error
 
 
 import bencoding
-import toyUtils
+import toy_utils as utils
 
 def dummy_get_tracker():
     """
@@ -23,11 +23,11 @@ def dummy_get_tracker():
     #Torrent Name
     url += "libs" + "?"
     #Infohash
-    with open( "torrent/libs" + toyUtils.TORRENT_FILE_EXTENSION ) as f:
+    with open( "torrent/libs" + utils.TORRENT_FILE_EXTENSION ) as f:
         torrent_dict, _ = bencoding.getDecodedObject( f.read() )
         info_dict = torrent_dict["info"]
         coded_info_dict = bencoding.getEncodedDict( info_dict )
-        info_hash = toyUtils.toy_hash( coded_info_dict ).hexdigest()
+        info_hash = utils.toy_digest( coded_info_dict )
         url += "info_hash=" + info_hash + "&"
     #Peer Id
     url += "peer_id=" + "-TY1000-0001TOYIMP01" + "&" 
@@ -48,4 +48,6 @@ def dummy_get_tracker():
     print answer[0]
     print answer_dict
 
-dummy_get_tracker()
+
+if __name__ == '__main__':
+    dummy_get_tracker()

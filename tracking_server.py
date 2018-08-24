@@ -1,13 +1,17 @@
 #-*- coding:utf-8 -*-
 """
 Ce fichier contient la partie web-server du tracker
+
+Note : 
+    Certains IDE peuvent afficher des erreurs sur request.query.X
+    c'est du au fait qu'ils ne gerent pas le format formsdict utilisé par bottle
 """
 from libs.bottle import route, Bottle, request
 
 
 
-from toyUtils import LEN_SHA256, toy_hash
-from toyUtils import PIECE_FILE_EXTENSION, TORRENT_FILE_EXTENSION
+from toy_utils import LEN_SHA256, toy_digest
+from toy_utils import PIECE_FILE_EXTENSION, TORRENT_FILE_EXTENSION
 import bencoding
 
 """
