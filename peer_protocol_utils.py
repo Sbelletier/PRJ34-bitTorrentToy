@@ -1,6 +1,7 @@
 #-*- coding:utf-8 -*-
 """
 """
+from sys import version_info
 
 from toy_utils import byte_to_ascii, byte_to_int, int_to_byte, ascii_to_byte
 
@@ -18,8 +19,19 @@ HANDSHAKE_PROTOCOL_ID = bytearray("BITTOY")
 """
 #
 MSG_LENPREF_SIZE = 4
-MSG_MAX_LENGTH = (2**(8*MSG_LENPREF_SIZE) - 1) + MSG_LENPREF_SIZE #Taille adressable + memoire
-REQ_MAX_LENGTH = 8*1024 #Un pair ne peut pas demander plus de 8Ko a la fois
+# Theoriquement Obsolete mais sait on jamais
+# MSG_MAX_LENGTH = (2**(8*MSG_LENPREF_SIZE) - 1) + MSG_LENPREF_SIZE #Taille adressable + memoire
+REQ_MAX_LENGTH = 8*1024 #Un peer ne peut pas demander plus de 8Ko a la fois
+"""
+TRAITEMENT DE REQUETES
+"""
+#La probabilité peut sembler basse mais les tentatives sont frequentes
+#Tenté(es) n fois par tour de boucle
+REQ_ACCEPT_THRESHOLD = 0.25 #Probabilité d'accepter une requete
+REQ_SEND_THRESHOLD = 0.20 #Probabilité d'envoyer une requete
+MIN_RAND_REQ_SIZE = 1024 #Taille minimale d'une requete si la place permet du requetage aléatoire
+#Tenté(es) une fois sans retirage possible
+REDUCE_SIZ_THRESHOLD = 0.45 #Probabilité de réduire la taille d'une grosse requete
 """
 TYPES DE MESSAGE
 """
@@ -72,7 +84,7 @@ class Piece_Request():
         """
         EQUAL OPERATOR
         """
-        if not isinstance(other, self) :
+        if not isinstance(other, Piece_Request) :
             return False
         else :
             test = self.piece_index == other.piece_index
@@ -101,7 +113,7 @@ class Message():
         self.id = msg_id
         self.payload = payload
 
-    def to_bytes(self):
+    def to_byte(self):
         """
         """
         if self.id == KEEP_ALIVE:
@@ -129,6 +141,39 @@ class Message():
             byte_id = code_int_on_size( HAVE, 1 )
             piece_index = code_int_on_size( self.payload[0], 4 )
             return length + byte_id + piece_index
+        #REQUEST A TROIS PAYLOADS : PIECE_INDEX, BEGIN_INDEX, LENGTH
+        elif self.id == REQUEST:
+            length = code_int_on_size(13, 4)
+            byte_id = code_int_on_size( REQUEST, 1 )
+            piece_index = code_int_on_size( self.payload[0], 4 )
+            begin = code_int_on_size( self.payload[1], 4 )
+            p_length = code_int_on_size( self.payload[2], 4 )
+            payload = piece_index + begin + p_length
+            return length + byte_id + payload
+        #PIECE A TROIS PAYLOADS : PIECE_INDEX, BEGIN_INDEX, BLOCK
+        elif self.id == PIECE:
+            #block est déjà une chaine de byte
+            byte = self.payload[2] 
+            if version_info < (3, 0):
+                block =  bytearray( byte )
+            else:
+                block = bytes( byte )
+            length = code_int_on_size( 9 + len(block), 4)
+            byte_id = code_int_on_size( PIECE, 1)
+            piece_index = code_int_on_size( self.payload[0], 4 )
+            begin = code_int_on_size( self.payload[1], 4 )
+            payload = piece_index + begin + block
+            return length + byte_id + payload
+        #REQUEST A TROIS PAYLOADS : PIECE_INDEX, BEGIN_INDEX, LENGTH
+        elif self.id == CANCEL:
+            length = code_int_on_size(13, 4)
+            byte_id = code_int_on_size( CANCEL, 1 )
+            piece_index = code_int_on_size( self.payload[0], 4 )
+            begin = code_int_on_size( self.payload[1], 4 )
+            p_length = code_int_on_size( self.payload[2], 4 )
+            payload = piece_index + begin + p_length
+            return length + byte_id + payload
+
 
 
 
@@ -178,8 +223,41 @@ def Message_From_Byte( byte ):
             return Message( NOT_INTERESTED )
         elif msg_id == HAVE:
             # Cas du HAVE : <len><id><piece_index>
-            byte = byte[1:] # On degage ce qui est lu
-            payload = ( byte_to_int( byte ), ) #Ici la payload n'a qu'un element (a,) -> tuple 1 elmt
+            byte = byte[1:] # On degage ce qui est déjà lu
+            payload = ( byte_to_int( byte[:4] ), ) #Ici la payload n'a qu'un element (a,) -> tuple 1 elmt
             return Message( HAVE, payload )
+        elif msg_id == REQUEST:
+            # Cas de REQUEST : <len><id><piece index><begin><length>
+            byte = byte[1:]# On degage ce qui est déjà lu
+            index = byte_to_int( byte[:4] )
+            begin = byte_to_int( byte[4:8] )
+            length = byte_to_int( byte[8:12] )
+            #Si la requete est trop grosse on la rejete
+            if length > REQ_MAX_LENGTH :
+                return None
+            payload = (index, begin, length)
+            return Message( REQUEST, payload )
+        elif msg_id == PIECE :
+            # Cas de PIECE : <len><id><piece index><begin><block>
+            byte = byte[1:]# On degage ce qui est déjà lu
+            index = byte_to_int( byte[:4] )
+            begin = byte_to_int( byte[4:8] )
+            block_s = byte[8:msg_len-1]
+            #
+            if version_info < (3, 0):
+                block =  bytearray( block_s )
+            else:
+                block = bytes( block_s )
+
+            payload = (index, begin, block)
+            return Message( PIECE, payload )
+        elif msg_id == CANCEL:
+            # Cas de REQUEST : <len><id><piece index><begin><length>
+            byte = byte[1:]# On degage ce qui est déjà lu
+            index = byte_to_int( byte[:4] )
+            begin = byte_to_int( byte[4:8] )
+            length = byte_to_int( byte[8:12] )
+            payload = (index, begin, length)
+            return Message( CANCEL, payload )
     #FIN DU GROS SWITCH        
     return None

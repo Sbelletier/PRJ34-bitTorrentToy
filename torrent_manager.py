@@ -8,6 +8,7 @@ import io # Lecture bufferisée de fichier
 
 from torrent_utils import Torrent_track, Download_track
 from torrent_utils import get_pieces_filename_by_hash, get_torrent_full_size
+from toy_utils import byte_to_ascii, ascii_to_byte
 from toy_utils import LEN_SHA256, toy_digest
 from toy_utils import PIECE_FILE_EXTENSION, TORRENT_FILE_EXTENSION
 
@@ -35,7 +36,7 @@ class Torrent_manager( Download_track, Torrent_track ):
                 self.pieces_downloaded[i] = True
             else: 
                 #On donne nom à la piece
-                filename = "_" + self.name + "_p_" + str(i) + PIECE_FILE_EXTENSION
+                filename = "_" + self.name + "_p_" + str(i+1) + PIECE_FILE_EXTENSION
                 piece = Piece_manager( self, self.folder, filename, 
                                         self.piece_hashes[i], self.info["piece length"] )
                 #Dans le toute on nettoie l'emplacement potentiel de la piece
@@ -64,9 +65,17 @@ class Torrent_manager( Download_track, Torrent_track ):
 
     def notify_completion(self, piece_index):
         """
-        Indique aux thread en vie que la piece est complete
+        Indique aux threads en vie que la piece est complete
         """
-        pass
+        for connection in self.connections:
+            connection.updates_stack.append( piece_index )
+
+    def notify_exit(self):
+        """
+        Indique aux threads en vie qu'ils doivent s'arreter
+        """
+        for connection in self.connections:
+            connection.updates_stack.append( "SHUTDOWN" )
 
 
 class Piece_manager():
@@ -97,6 +106,7 @@ class Piece_manager():
         Retour
             - False en cas d'erreur, True si l'ecriture s'est bien passée
         """
+        
         #On n'ecrit pas dans une piece qui est finie
         if self.complete : 
             return False
@@ -104,7 +114,7 @@ class Piece_manager():
         if start_pos != self.write_pos :
                 return False
         #On essaie de recuperer le verrou
-        lock_get = self.lock.acquire(blocking=False)
+        lock_get = self.lock.acquire(False)
         if lock_get:
             #On dit aux autres connection d'annuler leurs requetes 
             #Elle n'aboutiront de toute façon pas au niveau de l'ecriture
@@ -114,10 +124,15 @@ class Piece_manager():
                 elif connection.ident != connection_id :
                     index = self.manager.piece_index( self.hash )
                     connection.cancel_requests( index )
+            #On cree le fichier si il n'existe pas
+            if not os.path.exists(self.folder + self.filename):
+                with io.open(self.folder + self.filename, mode="wb" ) as file:
+                    pass
             #On ecrit dans le fichier
-            with io.open(self.folder + self.filename + PIECE_FILE_EXTENSION, mode="rb" ) as file:
-                file.seek( write_pos )
+            with io.open(self.folder + self.filename, mode="r+b" ) as file:
+                file.seek( self.write_pos )
                 file.write( byte )
+                file.flush()
             #On met à jour la piece
             self.write_pos += len( byte )
             #En cas de finition
@@ -144,19 +159,19 @@ class Piece_manager():
         Return 
             - False en cas d'erreur, un objet Bytes/Bytearray sinon
         """
+        #On ne peut lire que ce sur quoi on a ecrit
+        if start_pos + length > self.write_pos :
+            return False
+        #On attend de pouvoir lire
+        self.lock.acquire(True)
         try:
-            
-            #On ne peut lire que ce sur quoi on a ecrit
-            if start_pos + length > self.write_pos :
-                return False
-            #On attend de pouvoir lire
-            self.lock.acquire(blocking=True)
             #Initialisation hors du scope pour pouvoir return hors du with
             #Return a l'interieur du with serait dangereux 
             byte = None
             #Lecture du Fichier
-            with io.open(self.folder + self.filename + PIECE_FILE_EXTENSION, mode="rb" ) as file:
+            with io.open(self.folder + self.filename, mode="rb" ) as file:
                 file.seek(start_pos)
+                #byte = ascii_to_byte( file.read(length) )
                 byte = file.read(length)
             #On libere le verrou
             self.lock.release()
@@ -164,6 +179,7 @@ class Piece_manager():
                 return False
             return byte
         except IOError as e:
+            self.lock.release()
             return False
 
     def validate(self):
@@ -171,7 +187,7 @@ class Piece_manager():
         """
         #On verifie par le hash si la piece est bonne
         hash_test = False
-        with io.open(self.folder + self.filename + PIECE_FILE_EXTENSION, mode="rb" ) as file:
+        with io.open(self.folder + self.filename, mode="rb" ) as file:
             digest = toy_digest( file.read() )
             hash_test = ( digest == self.hash )
         #Si on a la piece correcte

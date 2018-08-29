@@ -85,6 +85,17 @@ class Download_track():
         """
         """
         return self.piece_hashes[ piece_index ]
+	
+    def is_complete(self):
+        """
+        """
+        for piece in self.pieces_downloaded:
+            if not self.pieces_downloaded[piece]:
+                return False
+        return True
+
+
+
 
 
 """

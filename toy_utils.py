@@ -11,6 +11,8 @@ J'ai donc choisi d'utiliser hexdigest pour esquiver le probleme
 """
 from sys import version_info
 
+from copy import copy
+
 import hashlib # Hash SHA256 
 import random # Random id generation
 
@@ -84,8 +86,12 @@ def ascii_to_byte( string ):
 def byte_to_int( byte ):
 	"""
 	"""
-	bstring = ascii_to_byte( byte )
-	bstring.reverse()
+	if version_info < (3, 0):
+		bstring =  bytearray( byte )
+	else:
+		b_string = bytes( byte ) 
+	bstring = bstring[::-1]
+	#bstring.reverse()
 	val = 0
 	for i in range( len( bstring ) ):
 		val += bstring[i] * (256**i)
