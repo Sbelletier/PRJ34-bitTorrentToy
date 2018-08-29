@@ -3,7 +3,7 @@
 Ce fichier contient les fonctions utilitaires
 pour gerer l'encodage bencoding
 """
-
+from __future__ import print_function
 
 
 def getDecodedInt( string ):
@@ -210,12 +210,12 @@ Retour Attendu : "[
 """
 if __name__ == '__main__':
     string = "ll12:constitutioni35ee10:sauvegardei9ed3:bar4:spam3:fooi42eee"
-    print "initial bencoding"
-    print string
-    print "decoding"
+    print( "initial bencoding")
+    print( string)
+    print( "decoding")
     result, typeObject = getDecodedObject( string )
-    print result
-    print typeObject
-    print "reencoding"
-    print getEncodedObject( result )
+    print( result)
+    print( typeObject)
+    print( "reencoding")
+    print( getEncodedObject( result ))
     
