@@ -9,7 +9,7 @@ from libs.bottle import run as bottle_run
 import bencoding
 
 
-
+from torrent_utils import Torrent_track
 from tracking_server import server
 
 from toy_utils import  PIECE_FILE_EXTENSION, TORRENT_FILE_EXTENSION
@@ -113,36 +113,7 @@ class Tracker( object ):
         bottle_run( self.server, ip = self.ip, port= self.port)
 
 
-class Torrent_track( object ):
-    """
-    Objet utilisé pour conserver les informations d'un torrent
 
-    Attributs :
-        - folder : <String> Url du dossier local ou trouver le torrent
-        - name : <String> Nom du torrent
-        - info : <dict> infodict du torrent (voire specification BitTorrent)
-        - info_hash : <String> hash du infodict permettant d'authentifier le torrent
-        - complete : <Int> nombre de peers ayant telechargé l'intégralité du torrent
-        - peers : <Int> nombre de peers actifs pouvant potentiellement seeder le torrent
-    """
-
-    def __init__(self, folder, name):
-        """
-        Constructeur
-
-        Paramètres : 
-            - torrent_name : le nom du torrent
-            - folder : url du dossier local ou trouver le torrent        
-        """
-        self.folder = folder
-        self.name = name
-        with open( folder + name + TORRENT_FILE_EXTENSION ) as file:
-            torrent_dict, _ = bencoding.getDecodedObject( file.read() )
-            self.info = torrent_dict["info"]
-            coded_info_dict = bencoding.getEncodedDict( self.info )
-            self.info_hash = toy_digest( coded_info_dict )
-        self.complete = 1 #Au moins un peer a recupere le torrent (la seed originale)
-        self.peers = 1 #idem 
 
         
 """

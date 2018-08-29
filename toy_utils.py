@@ -9,7 +9,10 @@ Note 2: en theorie, je devrais utiliser la methode digest plutot que hexdigest, 
 rencontré des problemes d'encodage qui m'ont paru avoir peu a voir avec le sujet.
 J'ai donc choisi d'utiliser hexdigest pour esquiver le probleme
 """
+from sys import version_info
+
 import hashlib # Hash SHA256 
+import random # Random id generation
 
 """
 ===================
@@ -25,7 +28,7 @@ LOG_FILE_EXTENSION = ".log"
 
 TRACKER_INTERVAL = 5
 
-
+LEN_STRING_ID = 20
 """
 ==================
 	INSTANCES
@@ -50,3 +53,57 @@ def toy_digest( a_string ):
 		Le hash utilisé au sein de l'application pour cette chaine
 	"""
 	return toy_hash( a_string ).hexdigest()
+
+def random_peer_id():
+	"""
+	"""
+	prefix = "-TY1000-" #Préfixe façon Azureus
+	suffix = "TOYIMP" #Suffixe non présent dans la norme Azureus pour distinguer d'un vrai client
+	len_id = LEN_STRING_ID - len(prefix) - len(suffix)
+	#Generation de l'id aléatoire
+	rand_id = str( random.randint(0, (10**len_id) -1 ) )
+	#Ajout de 0 pour remplir la taille de chaine necessaire
+	while( len(rand_id) < len_id ):
+		rand_id = "0" + rand_id
+	#
+	return prefix + rand_id + suffix
+
+def byte_to_ascii( byte ):
+	"""
+	"""
+	return byte.decode("ascii")
+
+def ascii_to_byte( string ):
+	"""
+	"""
+	if version_info < (3, 0):
+		return bytearray(string, "ascii")
+	else:
+		return bytes( string, "ascii" )
+
+def byte_to_int( byte ):
+	"""
+	"""
+	bstring = ascii_to_byte( byte )
+	bstring.reverse()
+	val = 0
+	for i in range( len( bstring ) ):
+		val += bstring[i] * (256**i)
+	return val
+
+def int_to_byte( integer ):
+	"""
+	breaks down in byte-size seq
+	"""
+	seq = []
+	while integer > 0:
+		seq.insert( 0, integer % 256 )
+		integer = int( integer // 256 )
+	#Cas limite integer == 0
+	if seq == []:
+		seq = [0]
+	#
+	if version_info < (3, 0):
+		return bytearray(seq )
+	else:
+		return bytes( seq )
