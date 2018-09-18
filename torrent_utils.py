@@ -1,6 +1,7 @@
 #-*- coding:utf-8 -*-
 """
-
+Contient les classes utilitaires et minimales pour la gestion d'un torrent distant
+Contient aussi des fonctions utilitaires pour la gestion d'un torrent local
 
 Note d'implementation pour la recuperation des pieces:
 	Cette methode de recuperation des pieces est couteuse en temps (elle necessite une lecture
@@ -51,6 +52,7 @@ class Torrent_track():
         self.name = name
         with open( folder + name + TORRENT_FILE_EXTENSION ) as file:
             torrent_dict, _ = bencoding.getDecodedObject( file.read() )
+            self.announce_url = torrent_dict["announce"]
             self.info = torrent_dict["info"]
             coded_info_dict = bencoding.getEncodedDict( self.info )
             self.info_hash = toy_digest( coded_info_dict )
@@ -61,6 +63,8 @@ class Download_track():
     """
 	Objet Minimal utilisé pour conserver les informations liées au telechargement d'un torrent
 
+	Généralement utilisé dans le cadre d'un peer distant
+
     Attributs :
 		- torrent : le torrent en cours de telechargement
 		- piece_hashes : liste *ordonnée* des hashes des pieces 
@@ -70,6 +74,10 @@ class Download_track():
     
     def __init__(self, torrent):
         """
+		Constructeur
+
+		Paramètre :
+			torrent : le torrent dont on doit suivre le telechargement
         """
         self.torrent = torrent
         self.piece_hashes = extract_list_pieces_hash( self.torrent.info["pieces"], LEN_SHA256)
@@ -78,19 +86,37 @@ class Download_track():
 
     def piece_index(self, piece_hash ):
         """
+		Renvoie l'index d'une piece dont on a le hash
+
+		Paramètre : 
+			- piece_hash : le hash de la piece complete
+
+		Retour :
+			- son index dans le torrent
         """
         return self.piece_hashes.index( piece_hash )
 
     def piece_hash(self, piece_index ):
         """
+		Renvoie le hash d'une piece dont on a l'index
+
+		Paramètre : 
+			- piece_index : l'index de la piece
+
+		Retour :
+			- son hash
         """
         return self.piece_hashes[ piece_index ]
 	
     def is_complete(self):
         """
+		Indique si le telechargement est fini ou non
+
+		Retour :
+			- True si toutes les pieces ont été téléchargées
         """
         for piece in self.pieces_downloaded:
-            if not self.pieces_downloaded[piece]:
+            if not piece:
                 return False
         return True
 

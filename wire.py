@@ -1,8 +1,10 @@
 #-*- coding:utf-8 -*-
-"""
-"""
 from __future__ import print_function
+"""
+Ce module contient la classe servant à gérer une connection entre le client
+et un peer au niveau de l'echange de message selon la norme de Bit Torrent
 
+"""
 
 import time
 import socket
@@ -11,62 +13,12 @@ import random
 
 
 from peer_protocol_utils import *
+from threading_utils import Reader_Thread
 from torrent_utils import Download_track
 from toy_utils import LEN_SHA256, toy_digest
 from toy_utils import PIECE_FILE_EXTENSION, TORRENT_FILE_EXTENSION
 from toy_utils import byte_to_ascii, ascii_to_byte, byte_to_int, int_to_byte
 
-"""
-=======================
-    UTILITY THREADS
-=======================
-"""
-class Reader_Thread( threading.Thread ):
-    """
-    Thread dont la vie consiste a bloquer sur de la lecture de socket
-    Etant donné que :
-        1. my_socket.recv(...) est un appel bloquant
-        2. si il y a un my_socket.recv(...) bloqué dans un autre thread
-            on peut quand meme faire my_socket.send(...)
-    Ce thread sert à bloquer sur l'appel et à tenir son parent informé
-    des messages envoyés via une stack
-    """
-
-    def __init__(self, t_socket=None, stack=None):
-        """
-        Constructeur
-
-        Paramètres :
-            - t_socket : le socket sur lequel lire des messages
-            - stack : la pile sur laquelle empiler les messages lus
-        """
-        threading.Thread.__init__(self)
-        self.socket = t_socket
-        self.stack = stack
-
-    def run(self):
-        """
-        Boucle d'execution du thread
-        """
-        keep_alive = True #Variable de controle
-        #Boucle pseudo-infinie
-        while keep_alive:
-            #On gere un shutdown
-            try:
-                #Appel Bloquant
-                data = self.socket.recv(32*1024)
-                #Cas ou la connection est fermée
-                if data == "":
-                    #On arrete le thread 
-                    keep_running = False
-                else:
-                    #On envoie sur la pile
-                    self.stack.append( data )
-            except Exception as e:
-                print( e.message )
-                keep_alive = False
-            
-            
 
 
 """
@@ -75,139 +27,176 @@ class Reader_Thread( threading.Thread ):
 =======================
 """
 class Connection_Thread(threading.Thread):
+    """
+    Ce thread s'occupe du maintien et de la communication sur une connection déjà ouverte
+    (cad dont le handshake est déjà validé) 
 
-    def __init__(self, torrent_manager, t_socket, master, peer, hosting=False):
+    Attributs :
+        - socket : le socket sur lequel la connection est établie
+        - master : le client possédant la connection (qu'elle soit entrante ou sortante)
+        - manager : le gestionnaire de torrenting (pour le tenir à jour de l'existence de la connexion)
+        - track : le suivi du téléchargement local du torrent
+        - peer : une representation du peer avec lequel on communique
+        - peer_download : une representation de l'état de téléchargement du torrent chez le peer
+        - peer_interesting_pieces : les pieces possédées par le peer mais pas par le client
+        - am_choking : condition =True si le client choke le peer
+        - peer_choking : condition =True si le peer choke le client
+        - am_interested : condition =True si le peer a des pieces qui interessent le client
+        - peer_interested : condition =True si le client a des pieces qui interessent le peer
+        - verbose : Flag set à False par défaut. Si =True, active une trace.
+        - reader : Thread lisant sur le socket
+        - reading_stack : liste sur laquelle l'instance lit les messages reçus par *reader*
+        - updates_stack : liste sur laquelle l'instance lit les messages envoyés par le client
+        - msg_stack : liste des messages en attente d'envoi de la part de l'instance
+        - pending_peer_requests : requetes en attente de réponse de la part du peer
+        - pending_sent_requests : requetes envoyés au peer en attente de réponse
+        - last_input_time : date du dernier message reçu du peer (pour du connection timeout)
+        - last_output_time : date du dernier message envoyé au peer (pour un eventuel KEEP_ALIVE)
+    """
+
+    def __init__(self, track, manager, t_socket, master, peer, reader ):
+        """
+        Constructeur 
+
+        Paramètres :
+            - track : l'objet suivant le téléchargement local du torrent
+            - manager : le thread gérant le torrenting du fichier à l'echelle du client
+            - t_socket : le socket sur lequel ecouter/envoyer
+            - peer : le peer avec lequel s'effectue la connection
+            - reader : le thread bloquant sur la lecture de messages du peer
+        """
         threading.Thread.__init__(self)
         # NETWORKING
-        self.hosting = hosting #True : Host = client, False : Host = remote
         self.socket = t_socket
         #Local Representation
         self.master = master
-        self.download = torrent_manager
-        self.download.register_connection( self )
+        self.manager = manager
+        self.manager.register_connection( self, peer )
+        self.track = track
+        self.track.register_connection( self )
         #Remote Representation
         self.peer = peer
-        self.peer_download = Download_track( self.download )
+        self.peer_download = Download_track( self.track )
         self.peer_interesting_pieces = []
         #P2P Values
-        self.am_choking = False
-        self.peer_choking = False
-        """
-        TODO Change back
         self.am_choking = True
         self.peer_choking = True
-        """
         self.am_interested = False
         self.peer_interested = False
+        #Flags
+        self.verbose = False
         #Own memory
-        self.reading_stack = []
+        self.reader = reader
+        self.reading_stack = reader.stack #Branchement de l'input sur la stack
         self.updates_stack = []
         self.msg_stack = []
         
         self.pending_peer_requests = []
         self.pending_sent_requests = [] 
+
+        self.last_input_time = time.time()
+        self.last_output_time= time.time()
         
 
 
 
     def run(self):
-        #On Initialise la lecture
-        reader = Reader_Thread(t_socket=self.socket, stack=self.reading_stack)
-        reader.start()
-        # Handshake
-        handshake_successful = False
-        if self.hosting :
-            if self.wait_and_check_handshake() :
-                self.socket.send( self.get_handshake() )
-                handshake_successful = True
-        else:
-            self.socket.send( self.get_handshake() )
-            handshake_successful = self.wait_and_check_handshake()
-        #fin du handshake
-        if handshake_successful:
-            #TODO REMOVE OR lOG
-            print ("HANDSHAKE SUCCEEDED WITH "+self.peer.id)
-            """
-            On envoie toutes les pièces déjà possédées
-            Note : vu qu'on ne gere pas BITFIELD, on envoie plein de HAVE
-            """
-            #TODO remove queue temporaire pour gagner du temps
-            queue_msgs = []
-            for i in range( len (self.download.pieces_downloaded) ) :
-                if self.download.pieces_downloaded[i] == True :
-                    have_msg = Message( HAVE, (i,) )#(i,) -> Tuple à 1 element
-                    self.socket.send( have_msg.to_byte() )
-            #self.socket.send( "done" )
-            #        
-            keep_alive = True
-            # Boucle de Communication
-            while keep_alive :
-                #ETAPE 1 : Lecture des messages
-                #print ("reading_stack status "+str( len(self.reading_stack) ))
-                while len(self.reading_stack) > 0:
-                    bmsg = self.reading_stack.pop(0)
-                    """
-                    NOTE TEMPORARY END CONDITION
-                    """
-                    if bmsg == "done":
-                        keep_alive = False
-                    else:
-                        msg = Message_From_Byte(bmsg)
-                        if msg :
-                            #Si le message est legal
-                            self.manage_message( msg )
-                #ETAPE 2 : Lecture des updates
-                while len(self.updates_stack) > 0:
-                    update = self.updates_stack.pop(0)
-                    if type( update ) == int or type( update ) == long:
-                        #Si c'est un int c'est l'index dune piece
-                        #Si elle fait partie des pieces que le peer pouvait proposer
-                        if update in self.peer_interesting_pieces:
-                            #On l'enleve de la liste car on l'a déjà
-                            self.peer_interesting_pieces.remove(update)
-                            #Si le peer n'a plus de pieces interessantes
-                            if len( self.peer_interesting_pieces ) == 0 :
-                                #On se met à jour et on lui fait signe
-                                self.am_interested = False
-                                self.msg_stack.append( Message(NOT_INTERESTED) )
-                        #Quoiqu'il en soit on le tient au courant
-                        msg = Message( HAVE, (update,) )
-                        self.msg_stack.append( msg )
-                #ETAPE 3 : Gestion des requetes
-                self.manage_peer_requests()
-                #Envoi Probable d'une requete
-                if not self.peer_choking and self.am_interested and random.random() < REQ_SEND_THRESHOLD:
-                    self.prepare_request_to_send()
-                #ETAPE 4 : Choking/Unchoking
-                #ETAPE X : Envoi des messages en attente
-                #print( "message_stack status "+str(len(self.msg_stack)))
-                while len(self.msg_stack) > 0 :
-                    msg = self.msg_stack.pop(0)
-                    if msg.id == 7:
-                        print( "Sending block from piece "+ str(msg.payload[0]) +"...")
-                    self.socket.send( msg.to_byte() )
-                
-                #print( "sleep")
-                #ETAPE X+1 : SLEEP 
-                time.sleep( 0.1 )
-                #print "awaken"
-                if self.peer_download.is_complete() and self.download.is_complete() :
-                    print( "Download Complete !")
+        """
+        BOUCLE D'EXECUTION DU THREAD
+        """
+        #On envoie toutes les pièces déjà possédées
+        #Note : vu qu'on ne gere pas BITFIELD, on envoie plein de HAVE
+        for i in range( len (self.track.pieces_downloaded) ) :
+            if self.track.pieces_downloaded[i] == True :
+                have_msg = Message( HAVE, (i,) )#(i,) -> Tuple à 1 element
+                self.socket.send( have_msg.to_byte() )
+        #        
+        keep_alive = True
+        # Boucle de Communication
+        while keep_alive :
+            #ETAPE 1 : Lecture des messages
+            #print ("reading_stack status "+str( len(self.reading_stack) ))
+            if len( self.reading_stack ) > 0:
+                self.last_input_time = time.time()
+            while len(self.reading_stack) > 0:
+                bmsg = self.reading_stack.pop(0)
+                msg = Message_From_Byte(bmsg)
+                if msg :
+                    #Si le message est legal
+                    self.manage_message( msg )
+            #ETAPE 2 : Lecture des updates
+            while len(self.updates_stack) > 0:
+                update = self.updates_stack.pop(0)
+                if type( update ) == int or type( update ) == long:
+                    #Si c'est un int c'est l'index dune piece
+                    #Si elle fait partie des pieces que le peer pouvait proposer
+                    if update in self.peer_interesting_pieces:
+                        #On l'enleve de la liste car on l'a déjà
+                        self.peer_interesting_pieces.remove(update)
+                        #Si le peer n'a plus de pieces interessantes
+                        if len( self.peer_interesting_pieces ) == 0 :
+                            #On se met à jour et on lui fait signe
+                            self.am_interested = False
+                            self.msg_stack.append( Message(NOT_INTERESTED) )
+                    #Quoiqu'il en soit on le tient au courant
+                    msg = Message( HAVE, (update,) )
+                    self.msg_stack.append( msg )
+                elif update == "SHUTDOWN":
                     keep_alive = False
-
-        #TODO REMOVE OR LOG
-        else:
-            print( "HANDSHAKE FAILED")
-        
-        self.terminate()
-        
-        
+                elif update == "CHOKE":
+                    self.am_choking = True
+                    msg = Message( CHOKE )
+                    self.msg_stack.append( msg )
+                elif update == "UNCHOKE":
+                    self.am_choking = False
+                    msg = Message( UNCHOKE )
+                    self.msg_stack.append( msg )
+            #ETAPE 3 : Gestion des requetes
+            self.manage_peer_requests()
+            #Envoi Probable d'une requete
+            if not self.peer_choking and self.am_interested and random.random() < REQ_SEND_PROBA:
+                self.prepare_request_to_send()
+            #ETAPE 4 : Envoi des messages en attente
+            #print( "message_stack status "+str(len(self.msg_stack)))
+            #On envoie un keep alive si on risque le timeout
+            if len( self.msg_stack ) > 0:
+                self.last_output_time = time.time()
+            elif time.time() - self.last_output_time > KEEP_ALIVE_PULSE:
+                msg = Message( KEEP_ALIVE )
+                self.msg_stack.append( msg )
+                self.last_output_time = time.time()
+            #
+            while len(self.msg_stack) > 0 :
+                msg = self.msg_stack.pop(0)
+                if msg.id == 7 and self.verbose:
+                    print( "Sending block from piece "+ str(msg.payload[0]) +"...")
+                self.socket.send( msg.to_byte() )
+            
+            #print( "sleep")
+            #ETAPE 5 : SLEEP 
+            time.sleep( TICK_DURATION )
+            #print "awaken"
+            #ETAPE 6 : FINITION SPONTANEE
+            if self.peer_download.is_complete() and self.track.is_complete() :
+                if self.verbose:
+                    print( "Download Complete !")
+                keep_alive = False
+            if time.time() - self.last_input_time > INPUT_TIMEOUT:
+                if self.verbose:
+                    print( "Connection Timed out !") 
+                keep_alive = False   
+        #FIN DE LA PSEUDO BOUCLE INFINIE
+        self.terminate() #Terminaison propre
         return
 
 
 
     def manage_message(self, msg ):
         """
+        Traite un Message Recu du Peer
+
+        Paramètre :
+            - msg : un objet encapsulant le message
         """
         #print( "Message "+str(msg.id) )
         # GROS SWITCH BEGINS
@@ -235,11 +224,11 @@ class Connection_Thread(threading.Thread):
             piece_index = msg.payload[0]
             self.peer_download.pieces_downloaded[ piece_index ] = True
             #On regarde si la piece nous interesse
-            if not self.download.pieces_downloaded[ piece_index ]:
+            if not self.track.pieces_downloaded[ piece_index ]:
                 #On l'ajoute à la liste des pieces telechargeable via le peer
                 self.peer_interesting_pieces.append( piece_index )
                 #On notifie la piece qu'on pourrait lui envoyer des morceaux
-                piece = self.download.pieces[ piece_index ]
+                piece = self.track.pieces[ piece_index ]
                 piece.may_write.append( self )
                 #On verifie si l'interet pour le peer est nouveau
                 if not self.am_interested :
@@ -249,14 +238,15 @@ class Connection_Thread(threading.Thread):
                     self.msg_stack.append( interest_msg )
             #Fin Case
         elif msg.id == REQUEST :
-            print( 'Request Received piece=' + str(msg.payload[0]) + ' begin=' + str(msg.payload[1]) )
+            if self.verbose:
+                print( 'Request Received piece=' + str(msg.payload[0]) + ' begin=' + str(msg.payload[1]) )
             #REQUEST
             #On ignore si on choke
             if not self.am_choking:
                 #On enregistre la requete
                 request = Piece_Request( *(msg.payload) )#Unpack the tuple directly
                 #On enregistre que des requêtes qu'on est susceptible de satisfaire
-                if self.download.pieces_downloaded[ request.piece_index ] == True :
+                if self.track.pieces_downloaded[ request.piece_index ] == True :
                     self.pending_peer_requests.append( request )
             #Fin Case
         elif msg.id == PIECE:
@@ -265,7 +255,7 @@ class Connection_Thread(threading.Thread):
             #Recuperation de la longueur
             length = len( block )
             #On tente d'update la piece correspondante
-            piece = self.download.pieces[ piece_index ]
+            piece = self.track.pieces[ piece_index ]
             if piece.write( begin, block, self.ident ) :
                 #Si ca s'est bien passé
                 for request in self.pending_sent_requests :
@@ -287,11 +277,14 @@ class Connection_Thread(threading.Thread):
     def cancel_sent_requests(self, piece_index):
         """
         Envoie un cancel pour toute requete non recue sur la piece donnée
+
+        Paramètres :
+            - piece_index : l'indice de la piece dont on doit annuler les requetes
         """
         for request in self.pending_sent_requests:
             if request.piece_index == piece_index:
                 msg = Message(CANCEL, (request.piece_index, request.begin, request.length) )
-                msg_stack.append( msg )
+                self.msg_stack.append( msg )
                 self.pending_sent_requests.remove( request )
 
 
@@ -300,13 +293,15 @@ class Connection_Thread(threading.Thread):
     def prepare_request_to_send(self):
         """
         Prepare une requete pour le peer
+
         """
-        #Select a random in interesting piece
+        #Selection d'une piece interessante possédée par le peer aléatoire
         piece_index = random.choice( self.peer_interesting_pieces )
-        piece = self.download.pieces[piece_index]
+        piece = self.track.pieces[piece_index]
         #On ecrit à l'endroit prevu pour la piece
         begin = piece.write_pos
         #On choisit la longueur aleatoirement
+        #Note : généralement on ferait plutot selon la vitesse de la connection
         max_length = min( REQ_MAX_LENGTH, piece.length - piece.write_pos)
         length = 0
         if max_length <= MIN_RAND_REQ_SIZE :
@@ -317,9 +312,9 @@ class Connection_Thread(threading.Thread):
         msg = Message( REQUEST, (piece_index, begin, length) )
         #Ajout aux stacks interessées
         self.pending_sent_requests.append( Piece_Request(piece_index, begin, length) )
+        self.msg_stack.append( msg )
         #On time out les requetes trop vieilles comme le ferait le peer
         self.pending_sent_requests = self.pending_sent_requests[-10:]
-        self.msg_stack.append( msg )
         #
 
 
@@ -333,13 +328,13 @@ class Connection_Thread(threading.Thread):
         self.pending_peer_requests = self.pending_peer_requests[-10:]
         for request in self.pending_peer_requests:
             #Chaque Requete a une chance aleatoire d'etre acceptée
-            if random.random() < REQ_ACCEPT_THRESHOLD:
+            if random.random() < REQ_ACCEPT_PROBA:
                 reduce = False
                 #Une grosse requete a des chances de se voir tronquer
-                if request.length >= REQ_MAX_LENGTH//2 and random.random() < REDUCE_SIZ_THRESHOLD:
+                if request.length >= REQ_MAX_LENGTH//2 and random.random() < REDUCE_SIZ_PROBA:
                     request.length = request.length//2
                 #On recupere le byte correspondant
-                piece = self.download.pieces[ request.piece_index ]
+                piece = self.track.pieces[ request.piece_index ]
                 byte = piece.read( request.begin, request.length )
                 #On verifie que la lecture a fonctionne
                 if byte:
@@ -353,9 +348,87 @@ class Connection_Thread(threading.Thread):
                 
 
 
+    def terminate(self):
+        """
+        Ferme proprement le thread
+        """
+        #Arret de la socket --> leve une erreur si le peer a déjà fermée la connection
+        try:
+            self.socket.shutdown( socket.SHUT_WR )  
+        except Exception:
+            pass
+        self.socket.close()
+        #On notifie le client que le thread s'est arrete
+        self.track.unregister_connection( self )
+        self.manager.unregister_connection( self, self.peer )
+
+
+
+
+"""
+==========================================
+
+THREAD POUR TESTER LE PROTOCOLE UN POUR UN
+
+==========================================
+"""
+class Dummy_Client(object):
+    """
+    Utiliser pour occulter l'absence de client
+    """
+    def __init__(self):
+        pass
+    def register_connection(self, connection, peer):
+        pass
+    def unregister_connection(self, connection, peer):
+        pass
+
+class Clientless_Connection_Thread( Connection_Thread ):
+    """
+    Thread de connection ne necessitant pas de client
+    il ne gere pas le choking mais peut faire un handshake si on lui donne les paramètres adéquat
+    """
+
+    def __init__(self, torrent_manager, t_socket, master, peer, hosting=False):
+        #
+        Connection_Thread.__init__(self, torrent_manager, Dummy_Client(), t_socket, master, peer, 
+                                reader= Reader_Thread(t_socket=t_socket, stack=[]) )
+        self.hosting = hosting #True : Host = client, False : Host = remote
+        self.am_choking = False #On enleve le choke vu qu'il n'y a pas de client pour le gerer
+        self.peer_choking = False
+
+
+    def run(self):
+
+        #On Initialise la lecture
+        self.reader.start()
+        # Handshake normalement géré par le client
+        handshake_successful = False
+        if self.hosting :
+            if self.wait_and_check_handshake() :
+                self.socket.send( self.get_handshake() )
+                handshake_successful = True
+        else:
+            self.socket.send( self.get_handshake() )
+            handshake_successful = self.wait_and_check_handshake()
+        #fin du handshake
+        if handshake_successful:
+            if self.verbose:
+                print ("HANDSHAKE SUCCEEDED WITH "+self.peer.id)
+            Connection_Thread.run(self)
+        else:
+            if self.verbose:
+                print( "HANDSHAKE FAILED")
+        self.terminate()
+
+    
 
     def wait_and_check_handshake(self):
         """
+        valide un handshake
+
+        Retour :
+            - True si le handshake a reussi, False sinon
         """
         msg_received = False
         timeout = HANDSHAKE_MAX_TIMEOUT
@@ -381,7 +454,7 @@ class Connection_Thread(threading.Thread):
                 return False
             msg = msg[8:]
             #info_hash
-            if byte_to_ascii( msg[:LEN_SHA256] ) != self.download.info_hash:
+            if byte_to_ascii( msg[:LEN_SHA256] ) != self.track.info_hash:
                 return False
             msg = msg[LEN_SHA256:]
             #peer_id
@@ -405,29 +478,11 @@ class Connection_Thread(threading.Thread):
         #Reserved
         handshake += bytearray(8)
         #info_hash
-        handshake += ascii_to_byte( self.download.info_hash )
+        handshake += ascii_to_byte( self.track.info_hash )
         #peer_id
         handshake += ascii_to_byte( self.master.id )
         #
         return handshake
-
-
-
-    def terminate(self):
-        """
-        """
-        #Network shutdown
-        self.socket.shutdown( socket.SHUT_WR ) 
-        self.socket.close()
-        #Local shutdown
-        self.download.unregister_connection( self )
-
-
-
-
-
-
-
     
 
 

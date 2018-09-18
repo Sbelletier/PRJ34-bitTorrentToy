@@ -43,7 +43,6 @@ s_server.listen(5)
 
 s_client.connect( ('localhost', 8010) )
 s_remote, address = s_server.accept()
-s_remote = copy(s_remote)
 r = Reader_Thread (s_remote, stack) 
 r.start()
 

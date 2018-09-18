@@ -1,37 +1,55 @@
 #-*- coding:utf-8 -*-
 """
+Ce fichier contient des utilitaires pour la gestion du Protocole en lui même
 """
 from sys import version_info
 
 from toy_utils import byte_to_ascii, byte_to_int, int_to_byte, ascii_to_byte
-
+from toy_utils import LEN_SHA256
 """
 ===================
     CONSTANTES
 ===================
 """
-
-#
+"""
+GESTION D'HORLOGE
+"""
+#Note : tous les temps sont en seconde
+TICK_DURATION = 0.1
+KEEP_ALIVE_PULSE = TICK_DURATION*50
+INPUT_TIMEOUT = TICK_DURATION*100
+CHOKING_INTERVAL = 5
+"""
+GESTION DU HANDSHAKE
+"""
 HANDSHAKE_MAX_TIMEOUT = 10
 HANDSHAKE_LENPREF_SIZE = 1
 HANDSHAKE_PROTOCOL_ID = bytearray("BITTOY")
 """
+GESTION DE MESSAGES
 """
-#
-MSG_LENPREF_SIZE = 4
-# Theoriquement Obsolete mais sait on jamais
-# MSG_MAX_LENGTH = (2**(8*MSG_LENPREF_SIZE) - 1) + MSG_LENPREF_SIZE #Taille adressable + memoire
 REQ_MAX_LENGTH = 8*1024 #Un peer ne peut pas demander plus de 8Ko a la fois
 """
 TRAITEMENT DE REQUETES
 """
 #La probabilité peut sembler basse mais les tentatives sont frequentes
 #Tenté(es) n fois par tour de boucle
-REQ_ACCEPT_THRESHOLD = 0.25 #Probabilité d'accepter une requete
-REQ_SEND_THRESHOLD = 0.20 #Probabilité d'envoyer une requete
+REQ_ACCEPT_PROBA = 0.25 #Probabilité d'accepter une requete
+REQ_SEND_PROBA = 0.20 #Probabilité d'envoyer une requete
 MIN_RAND_REQ_SIZE = 1024 #Taille minimale d'une requete si la place permet du requetage aléatoire
 #Tenté(es) une fois sans retirage possible
-REDUCE_SIZ_THRESHOLD = 0.45 #Probabilité de réduire la taille d'une grosse requete
+REDUCE_SIZ_PROBA = 0.45 #Probabilité de réduire la taille d'une grosse requete
+"""
+CHOKE/UNCHOKE
+"""
+#Les probabilités de changer d'état (1 - Threshold) doivent rester
+#Faible pour eviter la fibrillation
+UNCHOKE_THRESH_DL = 0.8 #
+UNCHOKE_THRESH_OPT = 0.9 #Optimist Unchoke
+# Les seuils d'unchoke sont plus bas que les seuils de choke
+# Dans le but de minimiser les chances de choke tous les threads pendant trop longtemps
+CHOKE_THRESH_PES = 0.95 #Pessimist Choke
+CHOKE_THRESH_NDL = 0.95 #
 """
 TYPES DE MESSAGE
 """
@@ -59,30 +77,48 @@ HANDLED_MESSAGES = [KEEP_ALIVE, CHOKE, UNCHOKE, INTERESTED, NOT_INTERESTED, HAVE
 """
 class Peer_Tracker():
     """
+    Cet objet contient les informations minimales pour identifier un peer lors de l'echange entre
+    deux clients
 
+    Attributs :
+        - ip : <String> l'adresse du peer
+        - port : <Int> le port de connection du peer sur le reseau
+        - peer_id : <String> l'identifiant du peer sur le reseau (20 Caracteres)
     """
+
     def __init__(self, ip, port, peer_id = None):
-        #NOTE_1 : peer_id initialisé à none pour client distant hosté localement
-        #NOTE_2 : peer_id forcement iniatilisé avant la connection pour connection a host distant
+        """
+        Constructeur
+        """
+        #NOTE_1 : peer_id initialisé à None pour client distant hosté localement
+        #NOTE_2 : peer_id forcement initialisé avant la connection pour connection a host distant
         self.ip = ip
         self.port = port
         self.id = peer_id
-        #Initialisation
+
+
 
 class Piece_Request():
     """
+    Cet objet contient les informations necessaires pour identifier une demande de piece
 
+    Attributs:
+        - piece_index : <Int> indice de la pièce demandée
+        - begin : <Int> indice de l'emplacement à partir duquel ecrire dans la piece
+        - length : <Int> nombre de bytes (octets) demandées
     """
     def __init__(self, piece_index, begin, length):
+        """
+        Constructeur
+        """
         self.piece_index = piece_index
         self.begin = begin
         self.length = length
-        #
-        self.failure_count = 0
+       
 
     def __eq__(self, other):
         """
-        EQUAL OPERATOR
+        OPERATEUR ==
         """
         if not isinstance(other, Piece_Request) :
             return False
@@ -94,9 +130,9 @@ class Piece_Request():
 
     def __ne__(self, other):
         """
-        NOT EQUAL OPERATOR
+        OPERATEUR != (different de not == en python)
         """
-        if not isinstance(other, self) :
+        if not isinstance(other, Piece_Request) :
             return True
         else :
             test = self.piece_index != other.piece_index
@@ -107,14 +143,26 @@ class Piece_Request():
 
 class Message():
     """
-    Note : Payload is always a Tuple
+    Objet representant un message envoyé d'un peer à l'autre
+
+    Attributs :
+        - id : <Integer> un id specifique au type de message envoyé (voir Constantes)
+        - payload : <None> si le message n'a pas de payload, un <Tuple> sinon
     """
     def __init__(self, msg_id, payload=None ):
+        """
+        Constructeur
+        """
         self.id = msg_id
         self.payload = payload
 
     def to_byte(self):
         """
+        Convertit le message en une chaine de bytes (octets) et renvoie cette chaine
+
+        Retour :
+            - Une bytearray(Python 2.X) ou un bytes(Python 3.X) dont le sens sémantique
+                est similaire à l'instance appelante
         """
         if self.id == KEEP_ALIVE:
             return code_int_on_size(0, 4)
@@ -175,8 +223,6 @@ class Message():
             return length + byte_id + payload
 
 
-
-
 """
 ==================
 	FONCTIONS
@@ -184,6 +230,15 @@ class Message():
 """
 def code_int_on_size(integer, size):
     """
+    Extension de int_to_byte(integer) assurant les zéros préfixes
+
+    Paramètres Obligatoires :
+        - integer : l'entier à convertir en byte
+        - size : le nombre (minimal) de byte que doit obligatoirement occuper l'entier
+
+    Retour :
+        - une chaine de bytes (octets) codant l'entier pris en entrée sous base 256
+
     Hypothèse de départ : 
         - integer < 256**size
     """
@@ -196,6 +251,13 @@ def code_int_on_size(integer, size):
 
 def Message_From_Byte( byte ):
     """
+    Construit un objet de type Message à partir d'une chaine de bytes
+
+    Paramètres :
+        - byte : une chaine de bytes contenant le message
+
+    Retour :
+        - Le Message nouvellement construit
     """
     # On recupere la longueur du message
     msg_len = byte_to_int( byte[:4] )
@@ -261,3 +323,5 @@ def Message_From_Byte( byte ):
             return Message( CANCEL, payload )
     #FIN DU GROS SWITCH        
     return None
+
+

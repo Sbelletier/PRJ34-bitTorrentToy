@@ -66,7 +66,7 @@ class Tracker( object ):
         #
         self.interval = TRACKER_INTERVAL
 
-    def seize_torrent(self, torrent_name, folder):
+    def seize_torrent(self, folder, torrent_name):
         """
         Modifie le fichier de torrent et le tracker pour qu'il puisse maintenant
         tracker le torrent
@@ -80,15 +80,14 @@ class Tracker( object ):
         """
         torrent = Torrent_track( folder, torrent_name)
         self.registered_torrents[torrent.info_hash] = torrent
-        self.registered_peers[ torrent.info_hash ] =  [self.id]
-        self_url = self.ip + ":" + str(self.port)
-        self.peers_url[ self.id ] = self_url
+        self.registered_peers[ torrent.info_hash ] =  []
         torrent_dict = dict()
         #MISE A JOUR DE L'ANNONCE DANS LE TORRENT
         with open( folder + torrent_name + TORRENT_FILE_EXTENSION ) as file:
             torrent_dict, _ = bencoding.getDecodedObject( file.read() )
         if len( torrent_dict.keys() ) > 0:
-            torrent_dict["announce"] = self_url + "/peers/" + torrent_name
+            self_url = self.ip + ":" + str( self.port )
+            torrent_dict["announce"] = "http://" + self_url + "/peers/" + torrent_name
             with open( folder + torrent_name + TORRENT_FILE_EXTENSION, "w" ) as file:
                 file.write( bencoding.getEncodedObject(torrent_dict) )
     
@@ -122,5 +121,5 @@ Main de Test
 if __name__ == '__main__':
     t = Tracker(ip="localhost", port=8082, id="-TY1000-8082TOYIMP01")#Azureus style ID
     t.bind_to( server )
-    t.seize_torrent( "libs", "torrent/" )
+    t.seize_torrent( "torrent/", "libs" )
     t.run()
